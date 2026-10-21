@@ -168,7 +168,7 @@ export function CompareView({ request, profile, onClose }: Props) {
 						Für diesen Vorschlag gibt es noch keine Vorschau-Version.
 						{previewUrl
 							? " Die Vorschau liegt unter einer fremden Adresse und lässt sich nur einzeln öffnen."
-							: " Sie entsteht, sobald im Repo der Website der Vorschau-Befehl eingerichtet ist (siehe Anleitung zum Worker)."}
+							: " Sie entsteht, sobald die Website in Cloudflare mit „Workers Builds“ verbunden ist (siehe Anleitung zum Worker)."}
 					</p>
 				</div>
 			) : (

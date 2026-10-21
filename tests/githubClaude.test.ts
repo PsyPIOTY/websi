@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { GitHubClaudeAdapter } from "../core/agent/githubClaude";
+import {
+	GitHubClaudeAdapter,
+	pickPreviewUrl,
+} from "../core/agent/githubClaude";
 import { createRequest } from "../core/requests";
 import { humansource } from "../sites/humansource";
 
@@ -250,5 +253,70 @@ describe("Claude über GitHub", () => {
 
 	it("ist ohne Zugang nicht bereit", () => {
 		expect(new GitHubClaudeAdapter(undefined).ready()).toBe(false);
+	});
+});
+
+describe("Vorschau über Cloudflare Workers Builds", () => {
+	const host = new URL(humansource.url).host;
+
+	it("liest die Vorschau-Adresse aus Checks, Branch-Name vor Versionsnummer", async () => {
+		const gh = fakeGitHub({
+			[`GET ${repo}/issues/50/comments`]: [],
+			[`GET ${repo}/pulls`]: [
+				{
+					number: 9,
+					html_url: "https://github.com/x/pull/9",
+					state: "open",
+					merged_at: null,
+					body: "Closes #50",
+					head: { ref: "websi/issue-50-faq", sha: "abc123" },
+				},
+			],
+			[`GET ${repo}/commits/abc123/check-runs`]: {
+				check_runs: [
+					{
+						details_url: "https://dash.cloudflare.com/x",
+						output: {
+							title: "Build erfolgreich",
+							summary: `Version: https://1a2b3c4d-${host}\nBranch: https://websi-issue-50-faq-${host}.`,
+							text: null,
+						},
+					},
+				],
+			},
+			[`GET ${repo}/commits/abc123/statuses`]: [],
+			[`GET ${repo}/issues/9/comments`]: [
+				{
+					body: "https://evil.workers.dev",
+					html_url: "",
+					created_at: "",
+					user: null,
+				},
+			],
+		});
+		const adapter = new GitHubClaudeAdapter("t", gh.fetcher);
+		const r = {
+			...createRequest(
+				{
+					siteId: "humansource",
+					sectionId: "situation",
+					text: "x",
+					pagePath: "/",
+				},
+				"r1",
+				"t",
+			),
+			status: "in_arbeit" as const,
+			external: { adapter: "github-claude", id: "50", url: "" },
+		};
+		const update = await adapter.sync(r, ctx);
+		expect(update.previewUrl).toBe(`https://websi-issue-50-faq-${host}`);
+	});
+
+	it("bleibt ohne Vorschau, wenn Cloudflare nichts meldet", () => {
+		expect(
+			pickPreviewUrl("nichts hier https://example.com", humansource),
+		).toBeUndefined();
+		expect(pickPreviewUrl(`https://${host}`, humansource)).toBeUndefined();
 	});
 });
