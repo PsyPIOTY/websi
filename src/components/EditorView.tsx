@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type AppToBridge, isBridgeMessage } from "../../core/bridge/protocol";
+import {
+	type EngineId,
+	type EngineInfo,
+	engineLabel,
+} from "../../core/engines";
 import { summarizeBySection } from "../../core/requests";
 import { type ChangeRequest, WHOLE_PAGE } from "../../core/types";
-import { api, type SiteData } from "../api";
+import { api, type SiteData, withRelated } from "../api";
+import { store } from "../local";
+import { EngineSelect } from "./EngineSelect";
 import { StatusChip } from "./StatusChip";
 
 type Device = "handy" | "tablet" | "desktop";
@@ -14,12 +21,42 @@ const widths: Record<Device, string> = {
 
 interface Props {
 	data: SiteData;
+	engines: EngineInfo[];
+	engine: EngineId;
+	onEngine: (e: EngineId) => void;
 	onCreated: (r: ChangeRequest) => void;
+	onChanged: (list: ChangeRequest[]) => void;
 	onOpen: (id: string) => void;
 }
 
-export function EditorView({ data, onCreated, onOpen }: Props) {
+/** Gesammelt = noch nicht losgeschickt. */
+const isDraft = (r: ChangeRequest) => r.status === "offen" && !r.external;
+
+export function EditorView({
+	data,
+	engines,
+	engine,
+	onEngine,
+	onCreated,
+	onChanged,
+	onOpen,
+}: Props) {
 	const { profile, requests } = data;
+	// Sammeln ist der Standard: Wünsche unter mehreren Abschnitten, dann alles auf einmal.
+	const [collect, setCollectState] = useState(
+		() => store.get("websi.collect") !== "nein",
+	);
+	const setCollect = (on: boolean) => {
+		setCollectState(on);
+		store.set("websi.collect", on ? "ja" : "nein");
+	};
+	const drafts = useMemo(
+		() =>
+			requests
+				.filter(isDraft)
+				.sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+		[requests],
+	);
 	const frame = useRef<HTMLIFrameElement>(null);
 	const [device, setDevice] = useState<Device>(() =>
 		window.innerWidth < 700 ? "handy" : "desktop",
@@ -70,20 +107,50 @@ export function EditorView({ data, onCreated, onOpen }: Props) {
 					text,
 					pin,
 					pagePath: path ?? pagePath,
+					engine,
+					send: !collect,
 				});
 				onCreated(r);
 				const failed = r.events.at(-1)?.kind === "fehler";
 				setToast(
 					failed
 						? `Gespeichert, aber nicht gesendet: ${r.events.at(-1)?.text}`
-						: "Gesendet. Der Status erscheint unter dem Abschnitt.",
+						: collect
+							? "Gesammelt. Unten alles auf einmal losschicken."
+							: "Gesendet. Der Status erscheint unter dem Abschnitt.",
 				);
 			} catch (e) {
 				setToast(`Nicht gespeichert: ${(e as Error).message}`);
 			}
 		},
-		[profile.id, pagePath, onCreated],
+		[profile.id, pagePath, onCreated, engine, collect],
 	);
+
+	const [sending, setSending] = useState(false);
+	const sendAll = async () => {
+		setSending(true);
+		try {
+			const list = await api.sendBatch(profile.id, engine);
+			onChanged(list);
+			const failed = list[0]?.events.at(-1)?.kind === "fehler";
+			setToast(
+				failed
+					? `Nicht gesendet: ${list[0]?.events.at(-1)?.text}`
+					: `${list.length} Wünsche als ein Auftrag an ${engineLabel(engine)} gegeben.`,
+			);
+		} catch (e) {
+			setToast(`Nicht gesendet: ${(e as Error).message}`);
+		} finally {
+			setSending(false);
+		}
+	};
+	const dropDraft = async (id: string) => {
+		try {
+			onChanged(withRelated(await api.discard(id)));
+		} catch (e) {
+			setToast((e as Error).message);
+		}
+	};
 
 	useEffect(() => {
 		const onMessage = (e: MessageEvent) => {
@@ -95,6 +162,8 @@ export function EditorView({ data, onCreated, onOpen }: Props) {
 					type: "websi:config",
 					sections: profile.sections,
 					preview: profile.preview,
+					mode: "edit",
+					collect,
 				});
 				post({ type: "websi:state", bySection });
 			} else if (msg.type === "websi:ready") {
@@ -123,11 +192,15 @@ export function EditorView({ data, onCreated, onOpen }: Props) {
 		};
 		window.addEventListener("message", onMessage);
 		return () => window.removeEventListener("message", onMessage);
-	}, [profile, bySection, post, submit, onOpen]);
+	}, [profile, bySection, post, submit, onOpen, collect]);
 
 	useEffect(() => {
 		post({ type: "websi:state", bySection });
 	}, [bySection, post]);
+
+	useEffect(() => {
+		post({ type: "websi:mode", collect });
+	}, [collect, post]);
 
 	useEffect(() => {
 		if (!toast) return;
@@ -160,6 +233,15 @@ export function EditorView({ data, onCreated, onOpen }: Props) {
 							</button>
 						))}
 					</fieldset>
+					<EngineSelect engines={engines} value={engine} onChange={onEngine} />
+					<label className="toggle">
+						<input
+							type="checkbox"
+							checked={collect}
+							onChange={(e) => setCollect(e.target.checked)}
+						/>
+						<span>Sammeln</span>
+					</label>
 					<a
 						className="editor__live"
 						href={new URL(profile.editorPath, profile.url).toString()}
@@ -185,6 +267,20 @@ export function EditorView({ data, onCreated, onOpen }: Props) {
 						src={src}
 					/>
 				</div>
+				{drafts.length > 0 && (
+					<Tray
+						drafts={drafts}
+						label={(id) =>
+							profile.sections.find((x) => x.id === id)?.label ??
+							WHOLE_PAGE.label
+						}
+						engine={engineLabel(engine)}
+						sending={sending}
+						onSend={sendAll}
+						onDrop={dropDraft}
+						onOpen={onOpen}
+					/>
+				)}
 			</div>
 
 			<aside
@@ -241,6 +337,7 @@ export function EditorView({ data, onCreated, onOpen }: Props) {
 					</p>
 				)}
 				<WholePage
+					collect={collect}
 					onSubmit={(text) => submit(WHOLE_PAGE.id, text)}
 					open={bySection[WHOLE_PAGE.id] ?? []}
 					onOpen={onOpen}
@@ -263,11 +360,87 @@ export function EditorView({ data, onCreated, onOpen }: Props) {
 	);
 }
 
+/** Leiste mit den gesammelten Wünschen: prüfen, einzeln entfernen, zusammen losschicken. */
+function Tray({
+	drafts,
+	label,
+	engine,
+	sending,
+	onSend,
+	onDrop,
+	onOpen,
+}: {
+	drafts: ChangeRequest[];
+	label: (sectionId: string) => string;
+	engine: string;
+	sending: boolean;
+	onSend: () => void;
+	onDrop: (id: string) => void;
+	onOpen: (id: string) => void;
+}) {
+	const [open, setOpen] = useState(false);
+	const sections = new Set(drafts.map((d) => d.sectionId)).size;
+	return (
+		<section className="tray" aria-label="Gesammelte Wünsche">
+			<div className="tray__bar">
+				<button
+					type="button"
+					className="tray__count"
+					aria-expanded={open}
+					onClick={() => setOpen((o) => !o)}
+				>
+					<strong>
+						{drafts.length} {drafts.length > 1 ? "Wünsche" : "Wunsch"}
+					</strong>{" "}
+					gesammelt in {sections} Abschnitt{sections > 1 ? "en" : ""}
+					<span className="tray__caret" aria-hidden="true">
+						{open ? "▾" : "▴"}
+					</span>
+				</button>
+				<button
+					type="button"
+					className="btn btn--primary"
+					disabled={sending}
+					onClick={onSend}
+				>
+					{sending ? "Wird gesendet …" : `Alle senden · ${engine}`}
+				</button>
+			</div>
+			{open && (
+				<ol className="tray__list">
+					{drafts.map((d) => (
+						<li key={d.id}>
+							<button
+								type="button"
+								className="tray__item"
+								onClick={() => onOpen(d.id)}
+							>
+								<span className="tray__section">{label(d.sectionId)}</span>
+								<span className="tray__text">{d.text}</span>
+							</button>
+							<button
+								type="button"
+								className="icon-btn"
+								aria-label={`Wunsch entfernen: ${d.text}`}
+								onClick={() => onDrop(d.id)}
+							>
+								×
+							</button>
+						</li>
+					))}
+				</ol>
+			)}
+		</section>
+	);
+}
+
 function WholePage({
+	collect,
 	onSubmit,
 	open,
 	onOpen,
 }: {
+	collect: boolean;
 	onSubmit: (text: string) => void;
 	open: { id: string; text: string; status: ChangeRequest["status"] }[];
 	onOpen: (id: string) => void;
@@ -310,7 +483,7 @@ function WholePage({
 				className="btn btn--primary"
 				disabled={!text.trim()}
 			>
-				Senden
+				{collect ? "Sammeln" : "Senden"}
 			</button>
 		</form>
 	);

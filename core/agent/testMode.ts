@@ -4,6 +4,7 @@ import type {
 	AgentContext,
 	AgentUpdate,
 	DispatchResult,
+	Job,
 } from "./adapter";
 
 /**
@@ -18,24 +19,38 @@ export class TestModeAdapter implements AgentAdapter {
 		return true;
 	}
 
-	async dispatch(request: ChangeRequest): Promise<DispatchResult> {
-		return { id: `test-${request.id.slice(0, 8)}`, url: "" };
+	async dispatch(job: Job): Promise<DispatchResult> {
+		return { id: `test-${job.items[0].request.id.slice(0, 8)}`, url: "" };
 	}
 
 	async sync(request: ChangeRequest, ctx: AgentContext): Promise<AgentUpdate> {
 		if (request.status !== "in_arbeit")
 			return { status: "unveraendert", messages: [] };
-		const already = request.events.some((e) => e.kind === "vorschlag");
-		if (already) return { status: "unveraendert", messages: [] };
+		// Nach einer Nachbesserung gibt es einen neuen Vorschlag.
+		const lastProposal = request.events.findLastIndex(
+			(e) => e.kind === "vorschlag",
+		);
+		const lastFollowUp = request.events.findLastIndex(
+			(e) => e.kind === "nachbessern",
+		);
+		if (lastProposal > lastFollowUp)
+			return { status: "unveraendert", messages: [] };
 		return {
 			status: "vorschlag",
 			messages: [
 				{
 					at: new Date().toISOString(),
+					usage: {
+						engine: request.engine ?? "claude",
+						seconds: 0,
+						where: "test",
+					},
 					text: `Testmodus: So würde der Agent antworten. Für „${ctx.section.label}“ läge jetzt ein Vorschlag bereit. Mit GitHub-Zugang entsteht hier ein echter Pull Request.`,
 				},
 			],
 			proposalUrl: ctx.pageUrl,
+			// Ohne echte Vorschau zeigt der Vergleich die Website gegen sich selbst.
+			previewUrl: ctx.site.url,
 		};
 	}
 

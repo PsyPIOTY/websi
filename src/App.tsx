@@ -1,38 +1,26 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { DEFAULT_ENGINE, type EngineId, isEngine } from "../core/engines";
 import type { ChangeRequest } from "../core/types";
+import type { UsageSummary } from "../core/usage";
 import { api, type SiteData, type SiteSummary, type StatusInfo } from "./api";
+import { CompareView } from "./components/CompareView";
 import { EditorView } from "./components/EditorView";
 import { RequestDetail } from "./components/RequestDetail";
 import { RequestsView } from "./components/RequestsView";
+import { StyleView } from "./components/StyleView";
 import { TopBar } from "./components/TopBar";
 import { VisibilityView } from "./components/VisibilityView";
+import { store } from "./local";
 
-export type Tab = "editor" | "sichtbarkeit" | "auftraege";
-
-const store = {
-	get(key: string) {
-		try {
-			return localStorage.getItem(key);
-		} catch {
-			return null;
-		}
-	},
-	set(key: string, value: string) {
-		try {
-			localStorage.setItem(key, value);
-		} catch {}
-	},
-};
+export type Tab = "editor" | "sichtbarkeit" | "auftraege" | "stil";
+const TABS: Tab[] = ["editor", "sichtbarkeit", "auftraege", "stil"];
 
 function readHash(): { site?: string; tab?: Tab } {
 	const params = new URLSearchParams(location.hash.slice(1));
 	const tab = params.get("tab");
 	return {
 		site: params.get("site") ?? undefined,
-		tab:
-			tab === "editor" || tab === "sichtbarkeit" || tab === "auftraege"
-				? tab
-				: undefined,
+		tab: TABS.includes(tab as Tab) ? (tab as Tab) : undefined,
 	};
 }
 
@@ -47,6 +35,19 @@ export function App() {
 	const [data, setData] = useState<SiteData | null>(null);
 	const [loadError, setLoadError] = useState<string | null>(null);
 	const [openId, setOpenId] = useState<string | null>(null);
+	const [compareId, setCompareId] = useState<string | null>(null);
+	const [usage, setUsage] = useState<UsageSummary | null>(null);
+	const [engine, setEngineState] = useState<EngineId>(() => {
+		const saved = store.get("websi.engine");
+		return isEngine(saved) ? saved : DEFAULT_ENGINE;
+	});
+	const setEngine = useCallback((e: EngineId) => {
+		setEngineState(e);
+		store.set("websi.engine", e);
+	}, []);
+	const refreshUsage = useCallback(() => {
+		api.usage().then(setUsage, () => {});
+	}, []);
 
 	useEffect(() => {
 		api.sites().then(
@@ -77,6 +78,7 @@ export function App() {
 	useEffect(() => {
 		setData(null);
 		setOpenId(null);
+		setCompareId(null);
 		if (!siteId) return;
 		store.set("websi.site", siteId);
 		reload();
@@ -99,29 +101,68 @@ export function App() {
 		history.replaceState(null, "", `#${params}`);
 	}, [siteId, tab]);
 
-	const upsert = useCallback((r: ChangeRequest) => {
+	const upsertMany = useCallback((list: ChangeRequest[]) => {
 		setData((d) => {
-			if (!d || d.profile.id !== r.siteId) return d;
-			const rest = d.requests.filter((x) => x.id !== r.id);
-			return { ...d, requests: [r, ...rest] };
+			if (!d) return d;
+			const mine = list.filter((r) => r.siteId === d.profile.id);
+			if (!mine.length) return d;
+			const ids = new Set(mine.map((r) => r.id));
+			const rest = d.requests.filter((x) => !ids.has(x.id));
+			return { ...d, requests: [...mine, ...rest] };
 		});
 	}, []);
+	const upsert = useCallback(
+		(r: ChangeRequest) => upsertMany([r]),
+		[upsertMany],
+	);
 
-	// Laufende Aufträge regelmäßig mit dem Ausführer abgleichen.
+	useEffect(() => {
+		refreshUsage();
+	}, [refreshUsage]);
+
+	// Kontingent nachziehen, sobald sich an den Aufträgen etwas ändert.
+	const changeKey = data?.requests.map((r) => r.updatedAt).join("|") ?? "";
+	useEffect(() => {
+		if (changeKey) refreshUsage();
+	}, [changeKey, refreshUsage]);
+
+	// Laufende Aufträge regelmäßig abgleichen; ein Sammelauftrag nur einmal.
 	useEffect(() => {
 		if (!data) return;
-		const running = data.requests.filter((r) => r.status === "in_arbeit");
+		const seen = new Set<string>();
+		const running = data.requests.filter((r) => {
+			if (r.status !== "in_arbeit") return false;
+			const key = r.batchId ?? r.id;
+			if (seen.has(key)) return false;
+			seen.add(key);
+			return true;
+		});
 		if (!running.length) return;
 		const timer = setInterval(() => {
 			if (document.hidden) return;
-			for (const r of running) api.action(r.id, "sync").then(upsert, () => {});
+			for (const r of running)
+				api.action(r.id, "sync").then(
+					(res) => upsertMany([res, ...(res.related ?? [])]),
+					() => {},
+				);
 		}, 20000);
 		return () => clearInterval(timer);
-	}, [data, upsert]);
+	}, [data, upsertMany]);
 
 	const open = useMemo(
 		() => data?.requests.find((r) => r.id === openId) ?? null,
 		[data, openId],
+	);
+	const comparing = useMemo(
+		() => data?.requests.find((r) => r.id === compareId) ?? null,
+		[data, compareId],
+	);
+	const siblings = useMemo(
+		() =>
+			open?.batchId
+				? (data?.requests.filter((r) => r.batchId === open.batchId) ?? [])
+				: [],
+		[data, open],
 	);
 
 	return (
@@ -134,6 +175,8 @@ export function App() {
 				onTab={setTab}
 				status={status}
 				adapter={data?.adapter ?? null}
+				usage={usage}
+				onUsage={setUsage}
 			/>
 			<main className="main">
 				{loadError && (
@@ -148,7 +191,11 @@ export function App() {
 					<EditorView
 						key={data.profile.id}
 						data={data}
+						engines={status?.engines ?? []}
+						engine={engine}
+						onEngine={setEngine}
 						onCreated={upsert}
+						onChanged={upsertMany}
 						onOpen={setOpenId}
 					/>
 				)}
@@ -168,13 +215,25 @@ export function App() {
 				{data && tab === "auftraege" && (
 					<RequestsView data={data} onOpen={setOpenId} />
 				)}
+				{data && tab === "stil" && <StyleView profile={data.profile} />}
 			</main>
 			{open && data && (
 				<RequestDetail
 					request={open}
 					profile={data.profile}
-					onChange={upsert}
+					siblings={siblings}
+					engines={status?.engines ?? []}
+					engine={engine}
+					onChange={upsertMany}
+					onCompare={() => setCompareId(open.id)}
 					onClose={() => setOpenId(null)}
+				/>
+			)}
+			{comparing && data && (
+				<CompareView
+					request={comparing}
+					profile={data.profile}
+					onClose={() => setCompareId(null)}
 				/>
 			)}
 		</div>

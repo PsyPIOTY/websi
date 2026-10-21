@@ -5,6 +5,9 @@ import {
 	type AgentUpdate,
 	briefing,
 	type DispatchResult,
+	type Job,
+	jobMeta,
+	jobTitle,
 } from "./adapter";
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -26,13 +29,13 @@ interface GhPull {
 }
 
 /**
- * Claude über Peters Abo: Jeder Auftrag wird ein GitHub-Issue im Repo der
- * Website. Die Claude-GitHub-Action (mit Peters Abo-Token) reagiert darauf und
- * legt einen Branch bzw. Pull Request an. WEBSI liest das zurück.
+ * KI über Peters Abo: Jeder Auftrag wird ein GitHub-Issue im Repo der
+ * Website. Der WEBSI-Worker (oder die Claude-Action bzw. Routine) reagiert
+ * darauf und legt einen Branch bzw. Pull Request an. WEBSI liest das zurück.
  */
 export class GitHubClaudeAdapter implements AgentAdapter {
 	readonly id = "github-claude";
-	readonly label = "Claude über dein Abo (GitHub)";
+	readonly label = "WEBSI-Worker über GitHub";
 
 	constructor(
 		private readonly token: string | undefined,
@@ -69,26 +72,24 @@ export class GitHubClaudeAdapter implements AgentAdapter {
 		return `/repos/${ctx.site.repo.owner}/${ctx.site.repo.name}`;
 	}
 
-	async dispatch(
-		request: ChangeRequest,
-		ctx: AgentContext,
-	): Promise<DispatchResult> {
-		const short = request.text.replace(/\s+/g, " ").slice(0, 60);
+	async dispatch(job: Job): Promise<DispatchResult> {
 		const body = [
-			"@claude",
+			// Die offizielle Claude-Action reagiert auf @claude, der WEBSI-Worker auf das Label.
+			job.engine === "claude" ? "@claude" : "",
 			"",
-			briefing(request, ctx),
+			briefing(job),
 			"",
-			`<!-- websi:${JSON.stringify({ requestId: request.id, siteId: request.siteId, sectionId: request.sectionId })} -->`,
+			`<!-- websi:${JSON.stringify(jobMeta(job))} -->`,
 		].join("\n");
+		const repo = `/repos/${job.site.repo.owner}/${job.site.repo.name}`;
 		const issue = await this.gh<{ number: number; html_url: string }>(
-			`${this.repoPath(ctx)}/issues`,
+			`${repo}/issues`,
 			{
 				method: "POST",
 				body: JSON.stringify({
-					title: `[WEBSI] ${ctx.site.name} · ${ctx.section.label}: ${short}`,
-					body,
-					labels: [ctx.site.agent.label],
+					title: jobTitle(job),
+					body: body.trimStart(),
+					labels: [job.site.agent.label],
 				}),
 			},
 		);
@@ -102,13 +103,27 @@ export class GitHubClaudeAdapter implements AgentAdapter {
 		const comments = await this.gh<GhComment[]>(
 			`${repo}/issues/${n}/comments?per_page=100`,
 		);
-		const messages = comments
-			.filter((c) => isAgent(c))
-			.map((c) => ({
+		const agentComments = comments.filter((c) => isAgent(c));
+		const messages = agentComments.map((c) => {
+			const meta = workerMeta(c.body);
+			return {
 				at: c.created_at,
 				text: cleanComment(c.body),
 				url: c.html_url,
-			}));
+				usage:
+					meta?.engine && typeof meta.seconds === "number"
+						? {
+								engine: meta.engine,
+								seconds: meta.seconds,
+								where: meta.where ?? "github",
+							}
+						: undefined,
+			};
+		});
+		const previewUrl = agentComments
+			.map((c) => workerMeta(c.body)?.preview)
+			.filter(Boolean)
+			.at(-1);
 
 		const pull = await this.findPull(repo, n);
 		if (pull) {
@@ -116,6 +131,7 @@ export class GitHubClaudeAdapter implements AgentAdapter {
 				status: "vorschlag",
 				messages,
 				proposalUrl: pull.html_url,
+				previewUrl,
 				branch: pull.head.ref,
 			};
 		}
@@ -126,6 +142,7 @@ export class GitHubClaudeAdapter implements AgentAdapter {
 				status: "vorschlag",
 				messages,
 				branch,
+				previewUrl,
 				proposalUrl: `https://github.com/${ctx.site.repo.owner}/${ctx.site.repo.name}/compare/${base}...${branch}`,
 			};
 		}
@@ -138,7 +155,7 @@ export class GitHubClaudeAdapter implements AgentAdapter {
 		);
 		const ref = new RegExp(`(^|\\D)#${n}(\\D|$)`);
 		return (
-			pulls.find((p) => p.head.ref.startsWith(`claude/issue-${n}-`)) ??
+			pulls.find((p) => isProposalBranch(p.head.ref, n)) ??
 			pulls.find((p) => p.body !== null && ref.test(p.body))
 		);
 	}
@@ -147,7 +164,7 @@ export class GitHubClaudeAdapter implements AgentAdapter {
 		const branches = await this.gh<{ name: string }[]>(
 			`${repo}/branches?per_page=100`,
 		);
-		return branches.find((b) => b.name.startsWith(`claude/issue-${n}-`))?.name;
+		return branches.find((b) => isProposalBranch(b.name, n))?.name;
 	}
 
 	async followUp(request: ChangeRequest, ctx: AgentContext, text: string) {
@@ -155,7 +172,10 @@ export class GitHubClaudeAdapter implements AgentAdapter {
 		if (!n) throw new Error("Auftrag wurde noch nicht gesendet");
 		await this.gh(`${this.repoPath(ctx)}/issues/${n}/comments`, {
 			method: "POST",
-			body: JSON.stringify({ body: `@claude ${text}` }),
+			body: JSON.stringify({
+				body:
+					(request.engine ?? "claude") === "claude" ? `@claude ${text}` : text,
+			}),
 		});
 	}
 
@@ -205,9 +225,42 @@ export class GitHubClaudeAdapter implements AgentAdapter {
 	}
 }
 
+/** Branch-Präfixe: eigener WEBSI-Worker sowie Claude-Action und Routine. */
+const PROPOSAL_PREFIXES = ["websi/issue-", "claude/issue-"];
+
+function isProposalBranch(name: string, n: string) {
+	return PROPOSAL_PREFIXES.some((p) => name.startsWith(`${p}${n}-`));
+}
+
 function isAgent(c: GhComment) {
 	const login = c.user?.login.toLowerCase() ?? "";
-	return c.user?.type === "Bot" || login.includes("claude");
+	// Der Worker kommentiert lokal unter Peters Konto, erkennbar an seiner Markierung.
+	return (
+		c.user?.type === "Bot" ||
+		login.includes("claude") ||
+		c.body.includes("<!-- websi-worker")
+	);
+}
+
+interface WorkerMeta {
+	engine?: string;
+	seconds?: number;
+	where?: string;
+	preview?: string;
+}
+
+/** Liest die Steuerdaten aus einem Worker-Kommentar: <!-- websi-worker {...} -->. */
+export function workerMeta(body: string): WorkerMeta | null {
+	const m = body.match(/<!-- websi-worker (\{.*?\}) -->/);
+	if (!m) return null;
+	try {
+		const data = JSON.parse(m[1]) as WorkerMeta;
+		if (data.preview && !/^https:\/\//.test(data.preview))
+			data.preview = undefined;
+		return data;
+	} catch {
+		return null;
+	}
 }
 
 /** Entfernt Steuerzeilen der Action, damit im Editor nur die Antwort steht. */

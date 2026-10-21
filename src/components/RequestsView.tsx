@@ -72,6 +72,9 @@ export function RequestsView({
 								<StatusChip status={r.status} />
 								<span className="request-row__section">
 									{label(r.sectionId)}
+									{r.batchId && (
+										<span className="muted small"> · Sammelauftrag</span>
+									)}
 								</span>
 								<span className="request-row__text">{r.text}</span>
 								<time className="muted small" dateTime={r.updatedAt}>

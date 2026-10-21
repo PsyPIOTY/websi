@@ -1,10 +1,13 @@
+import type { UsageSummary } from "../../core/usage";
 import type { Tab } from "../App";
 import type { SiteSummary, StatusInfo } from "../api";
+import { UsageMenu } from "./UsageMenu";
 
 const tabs: { id: Tab; label: string }[] = [
 	{ id: "editor", label: "Editor" },
 	{ id: "sichtbarkeit", label: "Sichtbarkeit" },
 	{ id: "auftraege", label: "Aufträge" },
+	{ id: "stil", label: "Stil" },
 ];
 
 interface Props {
@@ -15,6 +18,8 @@ interface Props {
 	onTab: (tab: Tab) => void;
 	status: StatusInfo | null;
 	adapter: { id: string; label: string } | null;
+	usage: UsageSummary | null;
+	onUsage: (u: UsageSummary) => void;
 }
 
 export function TopBar({
@@ -25,6 +30,8 @@ export function TopBar({
 	onTab,
 	status,
 	adapter,
+	usage,
+	onUsage,
 }: Props) {
 	const test = adapter?.id === "testmodus";
 	return (
@@ -56,6 +63,7 @@ export function TopBar({
 					</button>
 				))}
 			</nav>
+			{usage && <UsageMenu usage={usage} onUsage={onUsage} />}
 			{adapter && (
 				<span
 					className={`agent-pill ${test ? "agent-pill--test" : ""}`}

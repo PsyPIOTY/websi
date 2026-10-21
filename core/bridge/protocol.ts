@@ -18,13 +18,19 @@ export type BridgeToApp =
 			path: string;
 	  }
 	| { type: "websi:open"; requestId: string }
-	| { type: "websi:visible"; sectionId: string };
+	| { type: "websi:visible"; sectionId: string }
+	/** Nur im Vergleich: Scrollstand, damit beide Fassungen mitlaufen. */
+	| { type: "websi:scroll"; y: number };
 
 export type AppToBridge =
 	| {
 			type: "websi:config";
 			sections: SectionDef[];
 			preview?: SiteProfile["preview"];
+			/** "edit": Nachrichtenfelder; "compare": nur ansehen (Vorher/Nachher). */
+			mode?: "edit" | "compare";
+			/** Sammeln statt sofort senden (Beschriftung der Knöpfe). */
+			collect?: boolean;
 	  }
 	| {
 			type: "websi:state";
@@ -33,7 +39,9 @@ export type AppToBridge =
 				{ id: string; text: string; status: RequestStatus }[]
 			>;
 	  }
-	| { type: "websi:scrollTo"; sectionId: string };
+	| { type: "websi:scrollTo"; sectionId: string; smooth?: boolean }
+	| { type: "websi:scrollY"; y: number }
+	| { type: "websi:mode"; collect: boolean };
 
 export function isBridgeMessage(data: unknown): data is BridgeToApp {
 	return (

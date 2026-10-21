@@ -16,19 +16,13 @@ export interface AdapterInfo {
 }
 
 /**
- * Alle bekannten Ausführer. OpenAI ist als nächster Stecker vorgesehen;
- * er bekommt dieselbe Schnittstelle (z. B. über Codex in GitHub).
+ * Alle bekannten Ausführer. Welche KI arbeitet (Claude, Codex, lokal),
+ * entscheidet die Modellwahl pro Auftrag; ausgeführt wird sie vom Worker.
  */
 export function listAdapters(env: AgentEnv): AdapterInfo[] {
 	const gh = new GitHubClaudeAdapter(env.GITHUB_TOKEN);
 	return [
 		{ id: gh.id, label: gh.label, ready: gh.ready() },
-		{
-			id: "github-openai",
-			label: "OpenAI (Codex über GitHub)",
-			ready: false,
-			planned: true,
-		},
 		{ id: "testmodus", label: "Testmodus (ändert nichts)", ready: true },
 	];
 }

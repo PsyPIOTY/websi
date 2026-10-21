@@ -49,7 +49,13 @@ describe("Claude über GitHub", () => {
 			"r1",
 			"2026-10-21T20:00:00Z",
 		);
-		expect(await adapter.dispatch(r, ctx)).toEqual({
+		const job = {
+			site: ctx.site,
+			items: [{ request: r, section: ctx.section, pageUrl: ctx.pageUrl }],
+			engine: "claude" as const,
+			style: ["Keine Ausrufezeichen"],
+		};
+		expect(await adapter.dispatch(job)).toEqual({
 			id: "42",
 			url: "https://github.com/x/42",
 		});
@@ -62,7 +68,51 @@ describe("Claude über GitHub", () => {
 		expect(body.body.startsWith("@claude")).toBe(true);
 		expect(body.body).toContain("Frage kürzer");
 		expect(body.body).toContain("Nicht mergen");
-		expect(body.body).toContain('"requestId":"r1"');
+		expect(body.body).toContain('"requestIds":["r1"]');
+		expect(body.body).toContain('"engine":"claude"');
+		expect(body.body).toContain("**Peters Stil**\n- Keine Ausrufezeichen");
+	});
+
+	it("bündelt einen Sammelauftrag in ein Issue, ohne @claude bei anderem Modell", async () => {
+		const gh = fakeGitHub({
+			[`POST ${repo}/issues`]: {
+				number: 43,
+				html_url: "https://github.com/x/43",
+			},
+		});
+		const adapter = new GitHubClaudeAdapter("t", gh.fetcher);
+		const mk = (id: string, sectionId: string, text: string) =>
+			createRequest(
+				{ siteId: "humansource", sectionId, text, pagePath: "/" },
+				id,
+				"2026-10-21T20:00:00Z",
+			);
+		const s1 = humansource.sections[1];
+		const s2 = humansource.sections[2];
+		await adapter.dispatch({
+			site: humansource,
+			items: [
+				{
+					request: mk("a", s1.id, "Kürzer"),
+					section: s1,
+					pageUrl: ctx.pageUrl,
+				},
+				{
+					request: mk("b", s2.id, "Neues Bild"),
+					section: s2,
+					pageUrl: ctx.pageUrl,
+				},
+			],
+			engine: "codex",
+			style: [],
+		});
+		const body = gh.calls[0].body as { title: string; body: string };
+		expect(body.title).toContain("Sammelauftrag: 2 Wünsche");
+		expect(body.body.startsWith("@claude")).toBe(false);
+		expect(body.body).toContain(`### 1. ${s1.label}`);
+		expect(body.body).toContain(`### 2. ${s2.label}`);
+		expect(body.body).toContain('"requestIds":["a","b"]');
+		expect(body.body).toContain("Modell: Codex");
 	});
 
 	it("erkennt Antworten und den Pull Request des Agenten", async () => {
@@ -112,6 +162,50 @@ describe("Claude über GitHub", () => {
 		expect(update.proposalUrl).toBe("https://github.com/x/pull/7");
 		expect(update.messages.map((m) => m.text)).toEqual([
 			"Ich schaue mir das an",
+		]);
+	});
+
+	it("erkennt den eigenen Worker an Branch und Markierung, auch unter Peters Konto", async () => {
+		const gh = fakeGitHub({
+			[`GET ${repo}/issues/42/comments`]: [
+				{
+					html_url: "c1",
+					created_at: "t1",
+					body: '<!-- websi-worker {"engine":"claude","seconds":95,"where":"github","preview":"https://websi-42-humansource.peter-jarek.workers.dev"} -->\n**Vorschlag fertig.** Kürzer.',
+					user: { login: "PsyPIOTY", type: "User" },
+				},
+			],
+			[`GET ${repo}/pulls`]: [],
+			[`GET ${repo}/branches`]: [{ name: "websi/issue-42-faq" }],
+		});
+		const adapter = new GitHubClaudeAdapter("t", gh.fetcher);
+		const r = {
+			...createRequest(
+				{
+					siteId: "humansource",
+					sectionId: "situation",
+					text: "x",
+					pagePath: "/",
+				},
+				"r1",
+				"t",
+			),
+			status: "in_arbeit" as const,
+			external: { adapter: "github-claude", id: "42", url: "" },
+		};
+		const update = await adapter.sync(r, ctx);
+		expect(update.status).toBe("vorschlag");
+		expect(update.branch).toBe("websi/issue-42-faq");
+		expect(update.previewUrl).toBe(
+			"https://websi-42-humansource.peter-jarek.workers.dev",
+		);
+		expect(update.messages[0].usage).toEqual({
+			engine: "claude",
+			seconds: 95,
+			where: "github",
+		});
+		expect(update.messages.map((m) => m.text)).toEqual([
+			"**Vorschlag fertig.** Kürzer.",
 		]);
 	});
 
