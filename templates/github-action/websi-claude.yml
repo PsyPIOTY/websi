@@ -1,0 +1,33 @@
+# Vorlage für das Repo einer Website (Weg A: GitHub Action mit Peters Abo).
+# Ablegen unter .github/workflows/websi-claude.yml im Repo der Website.
+# Voraussetzung: Secret CLAUDE_CODE_OAUTH_TOKEN (lokal mit `claude setup-token` erzeugen)
+# und die Claude-GitHub-App für dieses Repo. Verbraucht GitHub-Actions-Minuten.
+name: WEBSI-Aufträge (Claude)
+
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  claude:
+    # Nur WEBSI-Aufträge, und Kommentare nur, wenn sie @claude ansprechen.
+    if: >-
+      contains(github.event.issue.labels.*.name, 'websi') &&
+      (github.event_name == 'issues' || contains(github.event.comment.body, '@claude'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

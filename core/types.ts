@@ -1,0 +1,170 @@
+/**
+ * WEBSI-Kernmodell. Bewusst ohne Abhängigkeiten zu React, Cloudflare oder
+ * einem KI-Anbieter, damit andere Systeme (z. B. Paco oder das spätere
+ * KI-Betriebssystem) dieselben Typen lesen und schreiben können.
+ */
+
+/** Ein Abschnitt einer Website, unter dem Änderungswünsche hängen. */
+export interface SectionDef {
+	/** Stabile ID, an der Aufträge dauerhaft hängen. */
+	id: string;
+	label: string;
+	/** CSS-Selektor, über den die Bridge den Abschnitt im Live-Bild findet. */
+	selector: string;
+}
+
+export interface KeywordTarget {
+	phrase: string;
+	/** Seite, die für diesen Begriff ranken soll (Pfad). */
+	page?: string;
+}
+
+export interface DirectoryDef {
+	id: string;
+	name: string;
+	url: string;
+}
+
+/** Alles, was WEBSI über eine Website wissen muss. Wird beim Wechsel geladen. */
+export interface SiteProfile {
+	id: string;
+	name: string;
+	/** Entwurf: Sperren für Google sind gewollt und werden nur als Hinweis gezeigt. */
+	stage: "entwurf" | "live";
+	/** Öffentliche Adresse der Seite (live oder Entwurf). */
+	url: string;
+	/** Pfad + Query, die im Editor geöffnet werden. */
+	editorPath: string;
+	/** Weitere Seiten für den Sichtbarkeits-Check (Pfade). */
+	pages: string[];
+	repo: { owner: string; name: string; baseBranch: string; path?: string };
+	agent: {
+		/** ID eines registrierten Agent-Adapters, z. B. "github-claude". */
+		adapter: string;
+		/** Label, auf das der Agent im Repo reagiert. */
+		label: string;
+	};
+	sections: SectionDef[];
+	/** Vorbereitung im Live-Bild, z. B. Studio-Bedienelemente ausblenden. */
+	preview?: {
+		/** Einmal anklicken, sobald vorhanden (z. B. „Reine Ansicht“). */
+		click?: string[];
+		/** Im Editor ausblenden. */
+		hide?: string[];
+	};
+	seo: {
+		/** Zielregion für lokale Suche, z. B. PLZ + Ort. */
+		region?: string;
+		postalCode?: string;
+		keywords: KeywordTarget[];
+		/** Erwartete schema.org-Typen, z. B. "Psychologist", "ProfessionalService". */
+		schemaTypes: string[];
+		googleBusinessProfile: boolean;
+	};
+	directories: DirectoryDef[];
+	notes?: string;
+}
+
+export type RequestStatus =
+	| "offen"
+	| "in_arbeit"
+	| "vorschlag"
+	| "veroeffentlicht"
+	| "verworfen";
+
+export interface Pin {
+	/** Position im Abschnitt in Prozent (0–100). */
+	x: number;
+	y: number;
+	/** Kurzer Text am angeklickten Element, hilft dem Agenten. */
+	hint?: string;
+}
+
+export interface RequestEvent {
+	at: string;
+	kind:
+		| "erstellt"
+		| "gesendet"
+		| "antwort"
+		| "vorschlag"
+		| "nachbessern"
+		| "status"
+		| "fehler";
+	text: string;
+	/** Wer: "peter", "websi" oder Adapter-ID. */
+	by: string;
+	url?: string;
+}
+
+/** Ein Auftrag: ein Änderungswunsch zu genau einem Abschnitt. */
+export interface ChangeRequest {
+	id: string;
+	siteId: string;
+	sectionId: string;
+	text: string;
+	pin?: Pin;
+	/** Seite im Editor, auf der der Wunsch entstand. */
+	pagePath: string;
+	status: RequestStatus;
+	createdAt: string;
+	updatedAt: string;
+	/** Verweis beim Ausführer, z. B. Issue-Nummer. */
+	external?: {
+		adapter: string;
+		id: string;
+		url: string;
+		proposalUrl?: string;
+		branch?: string;
+	};
+	events: RequestEvent[];
+}
+
+export type CheckLevel = "ok" | "warnung" | "fehler";
+export type CheckCategory = "Technik" | "Inhalte" | "Lokal" | "KI-Suche";
+
+export interface CheckResult {
+	id: string;
+	category: CheckCategory;
+	level: CheckLevel;
+	title: string;
+	detail: string;
+	/** Was zu tun ist, formuliert als Auftrag an den Agenten. */
+	fix?: string;
+	/** Gewicht für die Reihenfolge der Maßnahmen (1–5). */
+	impact: number;
+	page: string;
+	/** Abschnitt, an den eine Maßnahme als Auftrag gehen soll. */
+	sectionId?: string;
+}
+
+export interface VisibilityReport {
+	siteId: string;
+	scannedAt: string;
+	score: number;
+	checks: CheckResult[];
+	keywords: {
+		phrase: string;
+		inTitle: boolean;
+		inH1: boolean;
+		inBody: boolean;
+		page: string;
+	}[];
+	errors: string[];
+}
+
+export type DirectoryStatus = "offen" | "beantragt" | "aktiv";
+
+export interface DirectoryEntry {
+	siteId: string;
+	directoryId: string;
+	status: DirectoryStatus;
+	note: string;
+	updatedAt: string;
+}
+
+/** Pseudo-Abschnitt für Wünsche, die die ganze Seite betreffen (Meta, Technik). */
+export const WHOLE_PAGE: SectionDef = {
+	id: "ganze-seite",
+	label: "Ganze Seite",
+	selector: "html",
+};
