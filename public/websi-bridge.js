@@ -5,8 +5,11 @@
  * außer etwas Abstand unter jedem Abschnitt, solange der Editor offen ist.
  *
  * Protokoll (Typen in core/bridge/protocol.ts):
- *   Bridge → Dashboard: websi:hello, websi:ready, websi:submit, websi:open, websi:visible
- *   Dashboard → Bridge: websi:config, websi:state, websi:scrollTo
+ *   Bridge → Dashboard: websi:hello, websi:ready, websi:submit, websi:open, websi:visible, websi:scroll
+ *   Dashboard → Bridge: websi:config, websi:state, websi:scrollTo, websi:scrollY, websi:mode
+ *
+ * Im Vergleich (mode "compare") gibt es keine Felder; die Bridge meldet nur
+ * den Scrollstand, damit Vorher und Nachher gleich mitlaufen.
  */
 (() => {
 	if (window.__websiBridge) return;
@@ -16,7 +19,7 @@
 	const parentWin = window.parent;
 	const send = (msg) => parentWin.postMessage(msg, "*");
 	const statusText = {
-		offen: "Offen",
+		offen: "Gesammelt",
 		in_arbeit: "In Arbeit",
 		vorschlag: "Vorschlag da",
 		veroeffentlicht: "Live",
@@ -30,6 +33,10 @@
 	let state = {};
 	const bars = new Map();
 	let pinFor = null;
+	let mode = "edit";
+	let compareSections = [];
+	let collect = false;
+	let silentScroll = false;
 
 	const css = `
 		:host { all: initial; }
@@ -80,7 +87,7 @@
 				<div class="row">
 					<textarea rows="1" placeholder="Was soll sich an „${escapeHtml(def.label)}“ ändern?"></textarea>
 					<button type="button" class="pin" aria-pressed="false" title="Stelle im Abschnitt markieren">Stelle</button>
-					<button type="submit" class="send" disabled>Senden</button>
+					<button type="submit" class="send" disabled>${collect ? "Sammeln" : "Senden"}</button>
 				</div>
 			</form>`;
 		const form = root.querySelector("form");
@@ -122,6 +129,9 @@
 			hint.hidden = !text;
 		};
 		bar.setPinPressed = (on) => pinBtn.setAttribute("aria-pressed", String(on));
+		bar.setCollect = (on) => {
+			sendBtn.textContent = on ? "Sammeln" : "Senden";
+		};
 		return bar;
 	}
 
@@ -269,7 +279,8 @@
 	const schedule = () => {
 		cancelAnimationFrame(raf);
 		raf = requestAnimationFrame(() => {
-			if (sections.length) reportReady(attach());
+			if (mode === "compare") prepare();
+			else if (sections.length) reportReady(attach());
 		});
 	};
 
@@ -292,18 +303,35 @@
 		const msg = e.data;
 		if (!msg || typeof msg.type !== "string") return;
 		if (msg.type === "websi:config") {
-			sections = Array.isArray(msg.sections) ? msg.sections : [];
 			preview = msg.preview || {};
+			mode = msg.mode === "compare" ? "compare" : "edit";
+			collect = Boolean(msg.collect);
 			applyHide();
+			if (mode === "compare") {
+				// Nur ansehen: Abschnitte merken (für scrollTo), aber keine Felder.
+				sections = [];
+				compareSections = Array.isArray(msg.sections) ? msg.sections : [];
+				prepare();
+				return;
+			}
+			sections = Array.isArray(msg.sections) ? msg.sections : [];
 			lastReady = null;
 			reportReady(attach());
+		} else if (msg.type === "websi:mode") {
+			collect = Boolean(msg.collect);
+			for (const bar of bars.values()) bar.setCollect(collect);
+		} else if (msg.type === "websi:scrollY") {
+			silentScroll = true;
+			window.scrollTo({ top: msg.y, behavior: "instant" });
 		} else if (msg.type === "websi:state") {
 			state = msg.bySection || {};
 			for (const bar of bars.values()) renderState(bar);
 			layout();
 		} else if (msg.type === "websi:scrollTo") {
 			const bar = bars.get(msg.sectionId);
-			if (bar?.el) bar.el.scrollIntoView({ behavior: "smooth", block: "start" });
+			const def = compareSections.find((d) => d.id === msg.sectionId);
+			const el = bar?.el || (def && safeQuery(def.selector));
+			if (el) el.scrollIntoView({ behavior: msg.smooth === false ? "instant" : "smooth", block: "start" });
 		}
 	});
 
@@ -314,9 +342,19 @@
 	}).observe(document.body, { childList: true, subtree: true });
 	window.addEventListener("resize", layout);
 	let scrollTimer = 0;
+	let scrollRaf = 0;
 	window.addEventListener(
 		"scroll",
 		() => {
+			if (mode === "compare") {
+				if (silentScroll) {
+					silentScroll = false;
+					return;
+				}
+				cancelAnimationFrame(scrollRaf);
+				scrollRaf = requestAnimationFrame(() => send({ type: "websi:scroll", y: window.scrollY }));
+				return;
+			}
 			clearTimeout(scrollTimer);
 			scrollTimer = setTimeout(reportVisible, 120);
 		},

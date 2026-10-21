@@ -7,10 +7,23 @@ nur Peter veröffentlicht.
 ## Was WEBSI kann
 
 **Editor.** Die aktive Website erscheint live. Unter jedem Abschnitt hängt ein
-Nachrichtenfeld: Wunsch tippen, optional eine Stelle markieren, senden. Der
-Wunsch wird ein Auftrag an den Agenten. Status, Antworten und Vorschlag
-erscheinen direkt am Abschnitt und im Auftragsverlauf. „Veröffentlichen“ führt
-den Vorschlag zusammen; ohne diesen Klick geht nichts live.
+Nachrichtenfeld: Wunsch tippen, optional eine Stelle markieren, sammeln. Unten
+erscheinen alle gesammelten Wünsche; „Alle senden“ schickt sie als **einen
+Sammelauftrag** an die gewählte KI (Claude, Codex oder lokales Modell). Wer
+lieber einzeln schickt, schaltet „Sammeln“ aus. Status, Antworten und Vorschlag
+erscheinen direkt am Abschnitt und im Auftragsverlauf.
+
+**Vorschau und Vorher/Nachher.** Jeder Vorschlag kann eine eigene Testversion
+der Website bekommen. WEBSI legt Live-Fassung und Vorschlag übereinander; ein
+Schieber zeigt den Unterschied, beide scrollen gemeinsam. „Veröffentlichen“
+führt den Vorschlag zusammen; ohne diesen Klick geht nichts live.
+
+**Stil-Gedächtnis.** Regeln wie „Du statt Sie“ gehen mit jedem Auftrag mit, für
+eine Website oder für alle. WEBSI schlägt Regeln aus Nachbesserungen und
+Verwerf-Gründen vor.
+
+**Kontingent.** Oben rechts: Läufe je KI heute und in den letzten 5 Stunden,
+gemessen an Peters Richtwert, dazu die GitHub-Actions-Minuten im Monat.
 
 **Sichtbarkeit.** Seiten-Check mit Punktzahl (0–100) und Verlauf, die drei
 wichtigsten nächsten Schritte (jeweils mit einem Klick als Auftrag), Abdeckung
@@ -18,6 +31,9 @@ der Suchbegriffe, alle Prüfungen nach Technik, Inhalte, Lokal und KI-Suche,
 Stand der Verzeichniseinträge (Google-Profil, Bing, therapie.de …).
 
 **Aufträge.** Alle Wünsche der aktiven Website mit Filter nach Status.
+
+**MCP-Brücke.** Paco, das KI-Betriebssystem oder ein Claude-Client sprechen
+WEBSI über MCP an (`/api/websi/mcp`). Siehe [`docs/schnittstellen.md`](docs/schnittstellen.md).
 
 Bearbeitet wird immer genau eine Website. Beim Wechsel lädt WEBSI deren Profil
 (`sites/*.ts`) und alle zugehörigen Daten.
@@ -27,7 +43,8 @@ Bearbeitet wird immer genau eine Website. Beim Wechsel lädt WEBSI deren Profil
 | Ordner | Inhalt |
 | --- | --- |
 | `core/` | Kernmodell und Schnittstellen, ohne Abhängigkeit zu React, Cloudflare oder KI-Anbieter |
-| `core/agent/` | Agent-Adapter: Claude über GitHub (Abo), Testmodus; OpenAI folgt |
+| `core/agent/` | Agent-Adapter: WEBSI-Worker über GitHub, Testmodus |
+| `core/engines.ts` | Die wählbaren KIs: Claude, Codex, lokales Modell |
 | `core/seo/` | Seiten-Check und Maßnahmen |
 | `sites/` | Ein Profil pro Website: Adresse, Repo, Abschnitte, Suchbegriffe, Verzeichnisse |
 | `worker/` | Cloudflare Worker: API, Speicher (D1), Live-Vorschau |
@@ -72,7 +89,8 @@ Website-Repos: Issues, Pull Requests und Contents lesen/schreiben).
 
 1. `npx wrangler d1 create websi` und die ausgegebene `database_id` in
    `wrangler.jsonc` eintragen. Die Tabellen legt der Worker selbst an.
-2. `npx wrangler secret put GITHUB_TOKEN`
+2. `npx wrangler secret put GITHUB_TOKEN` und für die MCP-Brücke
+   `npx wrangler secret put MCP_TOKEN` (langes Zufallswort)
 3. `ALLOWED_EMAIL` in `wrangler.jsonc` auf Peters Adresse setzen und im
    Cloudflare-Dashboard unter Zero Trust → Access eine Anwendung für die
    WEBSI-Adresse anlegen (nur diese E-Mail).

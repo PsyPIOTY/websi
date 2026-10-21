@@ -4,6 +4,8 @@
  * KI-Betriebssystem) dieselben Typen lesen und schreiben können.
  */
 
+import type { EngineId } from "./engines";
+
 /** Ein Abschnitt einer Website, unter dem Änderungswünsche hängen. */
 export interface SectionDef {
 	/** Stabile ID, an der Aufträge dauerhaft hängen. */
@@ -43,6 +45,8 @@ export interface SiteProfile {
 		adapter: string;
 		/** Label, auf das der Agent im Repo reagiert. */
 		label: string;
+		/** Vorgabe für die Modellwahl, sonst Claude. */
+		engine?: EngineId;
 	};
 	sections: SectionDef[];
 	/** Vorbereitung im Live-Bild, z. B. Studio-Bedienelemente ausblenden. */
@@ -94,6 +98,15 @@ export interface RequestEvent {
 	/** Wer: "peter", "websi" oder Adapter-ID. */
 	by: string;
 	url?: string;
+	/** Rechenaufwand eines Worker-Laufs, für die Kontingent-Anzeige. */
+	usage?: RunUsage;
+}
+
+export interface RunUsage {
+	engine: string;
+	seconds: number;
+	/** "github" (Actions-Minuten) oder "lokal". */
+	where: string;
 }
 
 /** Ein Auftrag: ein Änderungswunsch zu genau einem Abschnitt. */
@@ -105,6 +118,10 @@ export interface ChangeRequest {
 	pin?: Pin;
 	/** Seite im Editor, auf der der Wunsch entstand. */
 	pagePath: string;
+	/** Gewähltes Modell; leer = Vorgabe der Website. */
+	engine?: EngineId;
+	/** Gemeinsamer Sammelauftrag: alle Wünsche mit gleicher batchId gehen zusammen. */
+	batchId?: string;
 	status: RequestStatus;
 	createdAt: string;
 	updatedAt: string;
@@ -114,6 +131,8 @@ export interface ChangeRequest {
 		id: string;
 		url: string;
 		proposalUrl?: string;
+		/** Vorschau-Adresse des Vorschlags (eigene Testversion der Website). */
+		previewUrl?: string;
 		branch?: string;
 	};
 	events: RequestEvent[];
@@ -168,3 +187,16 @@ export const WHOLE_PAGE: SectionDef = {
 	label: "Ganze Seite",
 	selector: "html",
 };
+
+/** Eine Regel aus Peters Stil-Gedächtnis. siteId "alle" gilt für jede Website. */
+export interface StyleRule {
+	id: string;
+	siteId: string;
+	text: string;
+	/** Woher die Regel stammt. */
+	source: "peter" | "nachbessern" | "verworfen";
+	active: boolean;
+	createdAt: string;
+}
+
+export const ALL_SITES = "alle";

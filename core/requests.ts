@@ -1,3 +1,4 @@
+import { type EngineId, isEngine } from "./engines";
 import type { ChangeRequest, Pin, RequestEvent, RequestStatus } from "./types";
 
 /** Erlaubte Übergänge. Veröffentlichen kann nur Peter auslösen (Worker prüft das). */
@@ -10,7 +11,7 @@ const transitions: Record<RequestStatus, RequestStatus[]> = {
 };
 
 export const statusLabels: Record<RequestStatus, string> = {
-	offen: "Offen",
+	offen: "Gesammelt",
 	in_arbeit: "In Arbeit",
 	vorschlag: "Vorschlag da",
 	veroeffentlicht: "Live",
@@ -29,6 +30,7 @@ export interface NewRequestInput {
 	text: string;
 	pagePath: string;
 	pin?: Pin;
+	engine?: EngineId;
 }
 
 export function validateNewRequest(input: unknown): NewRequestInput {
@@ -48,6 +50,10 @@ export function validateNewRequest(input: unknown): NewRequestInput {
 		text: str("text", 4000),
 		pagePath: typeof v.pagePath === "string" ? v.pagePath.slice(0, 300) : "/",
 	};
+	if (v.engine !== undefined && v.engine !== null && v.engine !== "") {
+		if (!isEngine(v.engine)) throw new RequestError("Modell unbekannt");
+		result.engine = v.engine;
+	}
 	const pin = v.pin as Record<string, unknown> | undefined;
 	if (pin && typeof pin.x === "number" && typeof pin.y === "number") {
 		result.pin = {

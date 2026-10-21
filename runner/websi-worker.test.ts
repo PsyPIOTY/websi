@@ -8,6 +8,7 @@ import {
 	decide,
 	type Engine,
 	findBranch,
+	findPreviewUrl,
 	type GhComment,
 	type GhIssue,
 	GitHub,
@@ -18,6 +19,7 @@ import {
 	safeBlocks,
 	selectorTokens,
 	slug,
+	taskMeta,
 } from "./websi-worker.ts";
 
 const body = [
@@ -108,6 +110,18 @@ describe("Hilfsfunktionen", () => {
 		expect(prompt).not.toContain("websi:");
 		expect(prompt).toContain("Nachbesserung von Peter");
 		expect(prompt).toContain("`npm test`");
+	});
+
+	it("liest Steuerdaten und Vorschau-Adressen", () => {
+		expect(
+			taskMeta('x\n<!-- websi:{"engine":"codex","requestIds":["a","b"]} -->'),
+		).toEqual({ engine: "codex", requestIds: ["a", "b"] });
+		expect(taskMeta("ohne")).toEqual({});
+		expect(
+			findPreviewUrl(
+				"See https://dash.cloudflare.com/x\nPreview URL: https://websi-3-praxis.p.workers.dev",
+			),
+		).toBe("https://websi-3-praxis.p.workers.dev");
 	});
 
 	it("liest Suchbegriffe aus dem Selektor", () => {
@@ -206,7 +220,9 @@ describe("Ablauf mit echtem Git", () => {
 		expect(posted[0].path).toBe("/pulls");
 		expect(posted[0].body.body).toContain("Closes #7");
 		expect(posted[1].path).toBe("/issues/7/comments");
-		expect(posted[1].body.body).toContain(MARKER);
+		expect(posted[1].body.body).toContain(
+			'<!-- websi-worker {"engine":"fake","seconds":0,"where":"lokal"} -->',
+		);
 	});
 
 	it("lädt nichts hoch, wenn die Prüfung rot bleibt", async () => {
@@ -237,5 +253,61 @@ describe("Ablauf mit echtem Git", () => {
 		expect(readFileSync(join(work, "faq.txt"), "utf8")).toBe("Lange Frage\n");
 		expect(posted).toHaveLength(1);
 		expect(posted[0].body.body).toContain("bleibt rot");
+	});
+
+	it("nimmt das Modell aus dem Auftrag, lässt lokale Modelle in GitHub liegen und baut eine Vorschau", async () => {
+		const { work } = setup();
+		const { gh, posted } = fakeGitHub();
+		const withMeta = (engine: string) => {
+			issue.body = `${body}\n<!-- websi:{"engine":"${engine}","requestIds":["r1"]} -->`;
+		};
+		const used: string[] = [];
+		const pick = (id: string): Engine => ({
+			id,
+			async run({ cwd }) {
+				used.push(id);
+				writeFileSync(join(cwd, "faq.txt"), "Kurze Frage\n");
+				return "Kürzer.";
+			},
+		});
+		const original = issue.body;
+		try {
+			withMeta("ollama");
+			const skipped = await handleIssue(7, {
+				gh,
+				engine: pick,
+				cwd: work,
+				where: "github",
+				log: () => {},
+			});
+			expect(skipped.kind).toBe("nichts");
+			expect(used).toEqual([]);
+
+			withMeta("codex");
+			process.env.WEBSI_CHECK = "-";
+			process.env.WEBSI_PREVIEW_CMD =
+				'echo "Uploaded. Preview: https://{alias}-site.peter.workers.dev"';
+			const result = await handleIssue(7, {
+				gh,
+				engine: pick,
+				cwd: work,
+				where: "github",
+				log: () => {},
+			});
+			expect(used).toEqual(["codex"]);
+			expect(result).toMatchObject({
+				kind: "vorschlag",
+				preview: "https://websi-7-site.peter.workers.dev",
+			});
+			const comment = posted.find((p) => p.path === "/issues/7/comments");
+			expect(comment?.body.body).toContain('"engine":"codex"');
+			expect(comment?.body.body).toContain(
+				'"preview":"https://websi-7-site.peter.workers.dev"',
+			);
+		} finally {
+			issue.body = original;
+			delete process.env.WEBSI_CHECK;
+			delete process.env.WEBSI_PREVIEW_CMD;
+		}
 	});
 });

@@ -1,4 +1,7 @@
+import { ALIAS } from "../core/preview";
 import type { SiteProfile } from "../core/types";
+
+export { previewKey } from "../core/preview";
 
 /**
  * Live-Vorschau: Die Website wird über WEBSI ausgeliefert, damit das
@@ -17,6 +20,34 @@ const OWN = [
 	/^\/favicon/,
 	/^\/api\/websi\//,
 ];
+
+/**
+ * Ziel im Vorschaufenster: "praxis" = die Website selbst,
+ * "praxis@websi-12" = ihre Vorschau-Version websi-12-<host> (Cloudflare-Vorschau).
+ */
+export interface Target {
+	site: SiteProfile;
+	origin: string;
+	key: string;
+}
+
+export function resolveTarget(
+	key: string | null | undefined,
+	sites: SiteProfile[],
+): Target | null {
+	if (!key) return null;
+	const [id, alias] = key.split("@");
+	const site = sites.find((s) => s.id === id);
+	if (!site) return null;
+	const base = new URL(site.url);
+	if (alias === undefined) return { site, origin: base.origin, key: site.id };
+	if (!ALIAS.test(alias)) return null;
+	return {
+		site,
+		origin: `${base.protocol}//${alias}-${base.host}`,
+		key: `${site.id}@${alias}`,
+	};
+}
 
 export function proxyPath(siteId: string, path: string) {
 	return `${PREFIX}${siteId}${path.startsWith("/") ? path : `/${path}`}`;
@@ -42,6 +73,19 @@ export function belongsToPreview(request: Request) {
 	}
 }
 
+/** Kennung der anfragenden Vorschau-Seite aus dem Referer (/proxy/<kennung>/…). */
+function refererKey(request: Request) {
+	const referer = request.headers.get("referer");
+	if (!referer) return null;
+	try {
+		const ref = new URL(referer);
+		if (!ref.pathname.startsWith(PREFIX)) return null;
+		return decodeURIComponent(ref.pathname.split("/")[2] ?? "");
+	} catch {
+		return null;
+	}
+}
+
 export function readCookie(request: Request, name: string) {
 	const header = request.headers.get("cookie") ?? "";
 	for (const part of header.split(";")) {
@@ -57,18 +101,21 @@ export async function proxyRequest(
 	fetcher: typeof fetch = fetch,
 ): Promise<Response> {
 	const url = new URL(request.url);
-	let site: SiteProfile | undefined;
+	let target: Target | null;
 	let path = url.pathname;
 	if (url.pathname.startsWith(PREFIX)) {
-		const [, , id, ...rest] = url.pathname.split("/");
-		site = sites.find((s) => s.id === id);
+		const [, , key, ...rest] = url.pathname.split("/");
+		target = resolveTarget(decodeURIComponent(key ?? ""), sites);
 		path = `/${rest.join("/")}`;
 	} else {
-		site = sites.find((s) => s.id === readCookie(request, SITE_COOKIE));
+		// Zwei Fenster (Vorher/Nachher) laufen gleichzeitig: erst die Seite fragen, die anfragt.
+		target =
+			resolveTarget(refererKey(request), sites) ??
+			resolveTarget(readCookie(request, SITE_COOKIE), sites);
 	}
-	if (!site) return new Response("Unbekannte Website", { status: 404 });
+	if (!target) return new Response("Unbekannte Website", { status: 404 });
 
-	const target = new URL(path + url.search, site.url);
+	const upstreamUrl = new URL(path + url.search, target.origin);
 	const headers = new Headers();
 	for (const h of [
 		"accept",
@@ -83,7 +130,7 @@ export async function proxyRequest(
 		if (v) headers.set(h, v);
 	}
 	headers.set("user-agent", "WEBSI-Vorschau");
-	const upstream = await fetcher(target.toString(), {
+	const upstream = await fetcher(upstreamUrl.toString(), {
 		method: request.method,
 		headers,
 		body: ["GET", "HEAD"].includes(request.method)
@@ -99,9 +146,9 @@ export async function proxyRequest(
 	out.delete("content-encoding");
 	const location = out.get("location");
 	if (location) {
-		const loc = new URL(location, site.url);
-		if (loc.origin === new URL(site.url).origin)
-			out.set("location", proxyPath(site.id, loc.pathname + loc.search));
+		const loc = new URL(location, target.origin);
+		if (loc.origin === target.origin)
+			out.set("location", proxyPath(target.key, loc.pathname + loc.search));
 	}
 
 	const type = upstream.headers.get("content-type") ?? "";
@@ -115,7 +162,7 @@ export async function proxyRequest(
 
 	out.append(
 		"set-cookie",
-		`${SITE_COOKIE}=${encodeURIComponent(site.id)}; Path=/; SameSite=Lax; HttpOnly`,
+		`${SITE_COOKIE}=${encodeURIComponent(target.key)}; Path=/; SameSite=Lax; HttpOnly`,
 	);
 	out.set("cache-control", "no-store");
 	const html = await upstream.text();

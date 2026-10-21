@@ -3,9 +3,15 @@
 # aus dem WEBSI-Repo nach .github/websi/websi-worker.ts kopieren.
 #
 # Läuft nur, wenn WEBSI einen Auftrag anlegt oder Peter nachbessert, und
-# verbraucht nur dann Actions-Minuten. Keine API-Kosten:
-#   claude  Secret CLAUDE_CODE_OAUTH_TOKEN (einmal lokal `claude setup-token`, nutzt Peters Abo)
-# Anderes Modell: Repository-Variable WEBSI_ENGINE (claude | codex) und WEBSI_MODEL.
+# verbraucht nur dann Actions-Minuten. Das Modell wählt Peter pro Auftrag in WEBSI.
+#
+# Secrets (Settings → Secrets and variables → Actions):
+#   CLAUDE_CODE_OAUTH_TOKEN  für Claude über das Abo (einmal lokal `claude setup-token`)
+#   CODEX_AUTH_JSON          optional, für Codex über ein ChatGPT-Abo (Inhalt von ~/.codex/auth.json)
+#   CLOUDFLARE_API_TOKEN     optional, für den Vorschau-Link
+# Variablen:
+#   WEBSI_PREVIEW_CMD        optional, z. B. npm run build && npx wrangler versions upload --preview-alias {alias}
+# Aufträge fürs lokale Modell lässt dieser Workflow liegen; die holt der Worker auf Peters Rechner.
 name: WEBSI-Worker
 
 on:
@@ -31,30 +37,48 @@ jobs:
       !github.event.issue.pull_request &&
       (github.event_name == 'issues' ||
         (github.event.comment.user.type != 'Bot' &&
-         !contains(github.event.comment.body, '<!-- websi-worker -->')))
+         !contains(github.event.comment.body, '<!-- websi-worker')))
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      - name: Modell aus dem Auftrag lesen
+        id: modell
+        run: |
+          engine=$(node -e '
+            const body = require(process.env.GITHUB_EVENT_PATH).issue.body || "";
+            const all = [...body.matchAll(/<!-- websi:(\{.*?\}) -->/g)];
+            let e = "claude";
+            try { e = JSON.parse(all.at(-1)[1]).engine || e; } catch {}
+            console.log(e);')
+          echo "engine=$engine" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
+        if: steps.modell.outputs.engine != 'ollama'
         with:
           fetch-depth: 0
       - uses: actions/setup-node@v4
+        if: steps.modell.outputs.engine != 'ollama'
         with:
           node-version: 24
       - name: Abhängigkeiten der Website
+        if: steps.modell.outputs.engine != 'ollama'
         run: if [ -f package-lock.json ]; then npm ci; fi
       - name: Modell bereitstellen
+        if: steps.modell.outputs.engine != 'ollama'
         run: |
-          case "${WEBSI_ENGINE:-claude}" in
+          case "${{ steps.modell.outputs.engine }}" in
             claude) npm install -g @anthropic-ai/claude-code ;;
-            codex) npm install -g @openai/codex ;;
+            codex)
+              npm install -g @openai/codex
+              if [ -n "$CODEX_AUTH_JSON" ]; then mkdir -p ~/.codex && printf '%s' "$CODEX_AUTH_JSON" > ~/.codex/auth.json; fi ;;
           esac
         env:
-          WEBSI_ENGINE: ${{ vars.WEBSI_ENGINE }}
+          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
       - name: Auftrag abarbeiten
+        if: steps.modell.outputs.engine != 'ollama'
         run: node .github/websi/websi-worker.ts
         env:
           GITHUB_TOKEN: ${{ github.token }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          WEBSI_ENGINE: ${{ vars.WEBSI_ENGINE }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WEBSI_PREVIEW_CMD: ${{ vars.WEBSI_PREVIEW_CMD }}
           WEBSI_MODEL: ${{ vars.WEBSI_MODEL }}

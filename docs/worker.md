@@ -16,7 +16,10 @@ Eine Datei, keine Abhängigkeiten, Node 22.18 oder neuer.
 6. Schreibt Peter in WEBSI nach („Nachbessern“), arbeitet der Worker auf
    demselben Branch weiter.
 
-## Modell wählen (`WEBSI_ENGINE`)
+## Modell wählen
+
+Peter wählt die KI pro Auftrag in WEBSI; sie steht in den Steuerdaten des
+Issues (`<!-- websi:{"engine":"codex",…} -->`). Fehlt sie, gilt `WEBSI_ENGINE`.
 
 | Wert | Was | Kosten | Anmeldung |
 | --- | --- | --- | --- |
@@ -40,6 +43,9 @@ Private Repos haben 2.000 freie Actions-Minuten im Monat; ein Auftrag braucht
 meist wenige Minuten. Hinweis: Ein Pull Request, den die Action anlegt, startet
 selbst keine weiteren Workflows (Regel von GitHub).
 
+Aufträge fürs lokale Modell lässt der Workflow liegen; die holt der Worker auf
+Peters Rechner (`--only ollama`).
+
 **Auf dem eigenen Rechner.** Keine Actions-Minuten, nötig für `ollama`.
 Im lokalen Klon der Website:
 
@@ -47,7 +53,28 @@ Im lokalen Klon der Website:
 export GITHUB_TOKEN=…            # fine-grained: Issues, Pull Requests, Contents
 node pfad/zu/websi-worker.ts --poll --every 10   # alle 10 Minuten
 node pfad/zu/websi-worker.ts --issue 12          # ein Auftrag
+node pfad/zu/websi-worker.ts --poll --every 10 --only ollama  # nur lokale Aufträge
 ```
+
+## Vorschau-Link
+
+Ist `WEBSI_PREVIEW_CMD` gesetzt (in GitHub als Repository-Variable), baut der
+Worker nach dem Push eine Testversion, z. B. für Websites auf Cloudflare Workers:
+
+```
+npm run build && npx wrangler versions upload --preview-alias {alias}
+```
+
+`{alias}` wird zu `websi-<Issue-Nr>`. Die ausgegebene Adresse
+(`https://websi-12-<worker>.<konto>.workers.dev`) steht im Vorschlag; WEBSI
+zeigt sie im Vergleich Vorher/Nachher. Dafür braucht das Repo das Secret
+`CLOUDFLARE_API_TOKEN` und in `wrangler.jsonc` aktivierte Vorschau-Adressen
+(`"preview_urls": true`).
+
+## Rückmeldung an WEBSI
+
+Jeder Worker-Kommentar beginnt mit `<!-- websi-worker {"engine","seconds","where","preview"} -->`.
+Daraus zählt WEBSI das Kontingent (Läufe, Actions-Minuten) und findet die Vorschau.
 
 Lokal kommentiert der Worker unter Peters Konto; WEBSI erkennt seine Antworten
 an der Markierung `<!-- websi-worker -->`.
@@ -57,7 +84,8 @@ an der Markierung `<!-- websi-worker -->`.
 | Variable | Bedeutung |
 | --- | --- |
 | `GITHUB_TOKEN` / `GH_TOKEN` | Zugriff auf das Repo der Website |
-| `WEBSI_ENGINE`, `WEBSI_MODEL` | Modell, siehe oben |
+| `WEBSI_ENGINE`, `WEBSI_MODEL` | Standard-KI, wenn der Auftrag keine nennt; Modellname darin |
+| `WEBSI_PREVIEW_CMD` | Befehl für die Vorschau, `{alias}` wird ersetzt |
 | `WEBSI_CHECK` | Prüfbefehl; `-` schaltet die Prüfung ab |
 | `WEBSI_BASE` | Basis-Branch, sonst der Standard-Branch des Repos |
 | `WEBSI_OLLAMA_URL` | Adresse von Ollama, Standard `http://localhost:11434` |

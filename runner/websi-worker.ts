@@ -13,6 +13,9 @@
  *   node websi-worker.ts --issue 12       einen Auftrag lokal abarbeiten
  *   node websi-worker.ts --poll           alle offenen Aufträge einmal prüfen
  *   node websi-worker.ts --poll --every 10  dauerhaft, alle 10 Minuten
+ *   node websi-worker.ts --poll --only ollama  lokal nur Aufträge fürs lokale Modell
+ *
+ * Das Modell wählt Peter pro Auftrag in WEBSI; es steht in den Steuerdaten des Issues.
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -51,7 +54,48 @@ export type Work =
 // ---------- reine Logik (getestet) ----------
 
 export function isWorkerComment(c: GhComment) {
-	return c.body.includes(MARKER);
+	return c.body.includes("<!-- websi-worker");
+}
+
+/** Steuerdaten, die WEBSI in den Auftrag schreibt: <!-- websi:{...} -->. */
+export function taskMeta(body: string | null): {
+	engine?: string;
+	requestIds?: string[];
+} {
+	const all = [...(body ?? "").matchAll(/<!-- websi:(\{.*?\}) -->/g)];
+	const last = all.at(-1);
+	if (!last) return {};
+	try {
+		return JSON.parse(last[1]);
+	} catch {
+		return {};
+	}
+}
+
+export interface RunMeta {
+	engine: string;
+	seconds: number;
+	where: string;
+	preview?: string;
+}
+
+/** Markierung für Worker-Kommentare, mit Laufdaten für WEBSI (Kontingent, Vorschau). */
+export function marker(meta?: RunMeta) {
+	return meta ? `<!-- websi-worker ${JSON.stringify(meta)} -->` : MARKER;
+}
+
+/** Vorschau-Name je Auftrag, z. B. websi-12 (gültig für Cloudflare). */
+export function previewAlias(n: number) {
+	return `websi-${n}`;
+}
+
+/** Erste https-Adresse aus der Ausgabe des Vorschau-Befehls. */
+export function findPreviewUrl(output: string) {
+	const urls = output.match(/https:\/\/[^\s"'<>)]+/g) ?? [];
+	return (
+		urls.find((u) => u.includes("workers.dev") || u.includes("pages.dev")) ??
+		urls[0]
+	);
 }
 
 /** Peters Nachrichten seit der letzten Antwort des Workers. */
@@ -390,10 +434,10 @@ export class GitHub {
 	async defaultBranch() {
 		return (await this.call<{ default_branch: string }>("")).default_branch;
 	}
-	comment(n: number, body: string) {
+	comment(n: number, body: string, meta?: RunMeta) {
 		return this.call(`/issues/${n}/comments`, {
 			method: "POST",
-			body: JSON.stringify({ body: `${MARKER}\n${body}` }),
+			body: JSON.stringify({ body: `${marker(meta)}\n${body}` }),
 		});
 	}
 	async ensurePull(branch: string, base: string, title: string, body: string) {
@@ -445,14 +489,20 @@ function checkCommand(cwd: string): string | null {
 
 export interface Options {
 	gh: GitHub;
-	engine: Engine;
+	/** Festes Modell (Tests) oder Auswahl je Auftrag. */
+	engine: Engine | ((id: string) => Engine);
 	cwd: string;
+	/** "github" oder "lokal": lokale Modelle laufen nur auf dem eigenen Rechner. */
+	where?: string;
+	/** Nur Aufträge mit diesem Modell abarbeiten (z. B. lokal nur "ollama"). */
+	only?: string;
 	log?: (line: string) => void;
 }
 
 /** Bearbeitet ein Issue vollständig. Gibt zurück, was passiert ist. */
 export async function handleIssue(n: number, opts: Options) {
-	const { gh, engine, cwd } = opts;
+	const { gh, cwd } = opts;
+	const where = opts.where ?? "lokal";
 	const log = opts.log ?? console.log;
 	const [issue, comments, names] = await Promise.all([
 		gh.issue(n),
@@ -464,6 +514,18 @@ export async function handleIssue(n: number, opts: Options) {
 		log(`#${n}: übersprungen (${work.reason})`);
 		return work;
 	}
+	const wanted =
+		taskMeta(issue.body).engine ?? process.env.WEBSI_ENGINE ?? "claude";
+	if (opts.only && wanted !== opts.only) {
+		log(`#${n}: übersprungen (Modell ${wanted}, hier nur ${opts.only})`);
+		return { kind: "nichts" as const, reason: "anderes Modell" };
+	}
+	if (where === "github" && wanted === "ollama") {
+		log(`#${n}: übersprungen (lokales Modell läuft nur auf deinem Rechner)`);
+		return { kind: "nichts" as const, reason: "nur lokal" };
+	}
+	const engine =
+		typeof opts.engine === "function" ? opts.engine(wanted) : opts.engine;
 
 	if (git(["status", "--porcelain"], cwd))
 		throw new Error("Arbeitskopie hat ungespeicherte Änderungen.");
@@ -474,6 +536,13 @@ export async function handleIssue(n: number, opts: Options) {
 	git(["checkout", "-B", branch, `origin/${from}`], cwd);
 	log(`#${n}: ${work.kind} auf ${branch} mit ${engine.id}`);
 
+	const started = Date.now();
+	const meta = (preview?: string): RunMeta => ({
+		engine: engine.id,
+		seconds: Math.round((Date.now() - started) / 1000),
+		where,
+		...(preview ? { preview } : {}),
+	});
 	const check = checkCommand(cwd);
 	try {
 		let summary = await engine.run({
@@ -485,6 +554,7 @@ export async function handleIssue(n: number, opts: Options) {
 			await gh.comment(
 				n,
 				`**Keine Änderung nötig oder möglich.**\n\n${summary}\n\nSchreib hier eine Präzisierung, dann versuche ich es erneut.`,
+				meta(),
 			);
 			return { kind: "ohne-aenderung" as const };
 		}
@@ -503,6 +573,7 @@ export async function handleIssue(n: number, opts: Options) {
 				await gh.comment(
 					n,
 					`**Kein Vorschlag:** \`${check}\` bleibt rot. Nichts wurde hochgeladen.\n\n\`\`\`\n${tail(result.output, 1500)}\n\`\`\`\n\nSchreib hier, wie es weitergehen soll, dann versuche ich es erneut.`,
+					meta(),
 				);
 				git(["reset", "--hard"], cwd);
 				git(["clean", "-fd"], cwd);
@@ -526,28 +597,49 @@ export async function handleIssue(n: number, opts: Options) {
 			cwd,
 		);
 		git(["push", "-u", "origin", branch], cwd);
+		const preview = buildPreview(n, cwd, log);
 		const url = await gh.ensurePull(
 			branch,
 			base,
 			`WEBSI: ${issue.title.replace(/^\[WEBSI\]\s*/i, "")}`,
-			`${summary}\n\nCloses #${n}\n\nVorschlag vom WEBSI-Worker (${engine.id}). Nicht mergen: Peter veröffentlicht in WEBSI.`,
+			`${summary}\n\n${preview ? `Vorschau: ${preview}\n\n` : ""}Closes #${n}\n\nVorschlag vom WEBSI-Worker (${engine.id}). Nicht mergen: Peter veröffentlicht in WEBSI.`,
 		);
 		await gh.comment(
 			n,
-			`**${work.kind === "nachbessern" ? "Nachgebessert" : "Vorschlag fertig"}.** ${summary}\n\nVorschlag: ${url}`,
+			`**${work.kind === "nachbessern" ? "Nachgebessert" : "Vorschlag fertig"}.** ${summary}\n\nVorschlag: ${url}${preview ? `\nVorschau: ${preview}` : ""}`,
+			meta(preview),
 		);
 		log(`#${n}: Vorschlag ${url}`);
-		return { kind: "vorschlag" as const, url };
+		return { kind: "vorschlag" as const, url, preview };
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		await gh
 			.comment(
 				n,
 				`**Abgebrochen:** ${msg}\n\nSchreib hier, dann versuche ich es erneut.`,
+				meta(),
 			)
 			.catch(() => {});
 		throw err;
 	}
+}
+
+/**
+ * Optionale Vorschau: WEBSI_PREVIEW_CMD baut eine Testversion der Website,
+ * z. B. `npm run build && npx wrangler versions upload --preview-alias {alias}`.
+ * Die ausgegebene Adresse landet im Vorschlag. Fehler hier halten nichts auf.
+ */
+function buildPreview(n: number, cwd: string, log: (line: string) => void) {
+	const cmd = process.env.WEBSI_PREVIEW_CMD;
+	if (!cmd) return undefined;
+	const result = runCheck(cmd.replaceAll("{alias}", previewAlias(n)), cwd);
+	const url = result.ok ? findPreviewUrl(result.output) : undefined;
+	log(
+		url
+			? `#${n}: Vorschau ${url}`
+			: `#${n}: keine Vorschau (${tail(result.output, 300)})`,
+	);
+	return url;
 }
 
 function arg(name: string) {
@@ -567,12 +659,22 @@ async function main() {
 		arg("repo") ?? process.env.GITHUB_REPOSITORY ?? repoFromRemote(cwd);
 	if (!token || !repo)
 		throw new Error("GITHUB_TOKEN und Repository (--repo owner/name) nötig.");
-	const make = engines[process.env.WEBSI_ENGINE ?? "claude"];
-	if (!make) throw new Error(`Unbekanntes Modell: ${process.env.WEBSI_ENGINE}`);
+	const pick = (id: string) => {
+		const make = engines[id];
+		if (!make) throw new Error(`Unbekanntes Modell: ${id}`);
+		// WEBSI_MODEL gilt nur für das Standardmodell dieser Umgebung.
+		const model =
+			id === (process.env.WEBSI_ENGINE || "claude")
+				? process.env.WEBSI_MODEL || undefined
+				: undefined;
+		return make(model);
+	};
 	const opts: Options = {
 		gh: new GitHub(token, repo),
-		engine: make(process.env.WEBSI_MODEL || undefined),
+		engine: pick,
 		cwd,
+		where: process.env.GITHUB_ACTIONS === "true" ? "github" : "lokal",
+		only: arg("only"),
 	};
 
 	const poll = async () => {

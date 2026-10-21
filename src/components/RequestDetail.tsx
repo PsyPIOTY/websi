@@ -1,16 +1,27 @@
 import { useEffect, useId, useRef, useState } from "react";
 import {
+	type EngineId,
+	type EngineInfo,
+	engineLabel,
+} from "../../core/engines";
+import {
 	type ChangeRequest,
 	type SiteProfile,
 	WHOLE_PAGE,
 } from "../../core/types";
-import { api } from "../api";
+import { type ActionResult, api, withRelated } from "../api";
+import { EngineSelect } from "./EngineSelect";
 import { StatusChip } from "./StatusChip";
 
 interface Props {
 	request: ChangeRequest;
 	profile: SiteProfile;
-	onChange: (r: ChangeRequest) => void;
+	/** Alle Wünsche desselben Sammelauftrags (inklusive diesem). */
+	siblings: ChangeRequest[];
+	engines: EngineInfo[];
+	engine: EngineId;
+	onChange: (list: ChangeRequest[]) => void;
+	onCompare: () => void;
 	onClose: () => void;
 }
 
@@ -25,16 +36,29 @@ const when = (iso: string) =>
 export function RequestDetail({
 	request: r,
 	profile,
+	siblings,
+	engines,
+	engine,
 	onChange,
+	onCompare,
 	onClose,
 }: Props) {
 	const [busy, setBusy] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [text, setText] = useState("");
+	const [rememberFollow, setRememberFollow] = useState(false);
 	const [confirm, setConfirm] = useState(false);
+	const [discarding, setDiscarding] = useState(false);
+	const [reason, setReason] = useState("");
+	const [rememberReason, setRememberReason] = useState(true);
+	const [sendEngine, setSendEngine] = useState<EngineId>(r.engine ?? engine);
 	const panel = useRef<HTMLDivElement>(null);
 	const titleId = useId();
 	const followId = useId();
+	const reasonId = useId();
+	const label = (id: string) =>
+		profile.sections.find((s) => s.id === id)?.label ?? WHOLE_PAGE.label;
+	const batch = siblings.length > 1;
 	const section =
 		profile.sections.find((s) => s.id === r.sectionId) ?? WHOLE_PAGE;
 
@@ -48,16 +72,19 @@ export function RequestDetail({
 	// biome-ignore lint/correctness/useExhaustiveDependencies: beim Wechsel des Auftrags zurücksetzen
 	useEffect(() => {
 		setConfirm(false);
+		setDiscarding(false);
 		setError(null);
 	}, [r.id]);
 
-	const run = async (label: string, fn: () => Promise<ChangeRequest>) => {
-		setBusy(label);
+	const run = async (what: string, fn: () => Promise<ActionResult>) => {
+		setBusy(what);
 		setError(null);
 		try {
-			onChange(await fn());
+			onChange(withRelated(await fn()));
+			return true;
 		} catch (e) {
 			setError((e as Error).message);
+			return false;
 		} finally {
 			setBusy(null);
 		}
@@ -93,6 +120,27 @@ export function RequestDetail({
 				</div>
 
 				<blockquote className="drawer__text">{r.text}</blockquote>
+				<p className="muted small">
+					{r.external
+						? `KI: ${engineLabel(r.engine ?? "claude")}`
+						: "Noch nicht gesendet"}
+				</p>
+				{batch && (
+					<div className="batch-box">
+						<p className="small">
+							<strong>Sammelauftrag mit {siblings.length} Wünschen.</strong> Ein
+							gemeinsamer Vorschlag; Veröffentlichen und Verwerfen gelten für
+							alle.
+						</p>
+						<ul>
+							{siblings.map((x) => (
+								<li key={x.id} className="small">
+									<span className="muted">{label(x.sectionId)}:</span> {x.text}
+								</li>
+							))}
+						</ul>
+					</div>
+				)}
 				{r.pin && (
 					<p className="muted small">
 						Markierte Stelle: {Math.round(r.pin.x)} % / {Math.round(r.pin.y)} %
@@ -108,21 +156,47 @@ export function RequestDetail({
 					)}
 					{r.external?.proposalUrl && (
 						<a href={r.external.proposalUrl} target="_blank" rel="noreferrer">
-							Vorschlag ansehen
+							Änderung im Code
+						</a>
+					)}
+					{r.external?.previewUrl && (
+						<a href={r.external.previewUrl} target="_blank" rel="noreferrer">
+							Vorschau öffnen
 						</a>
 					)}
 				</div>
+				{(r.status === "vorschlag" || r.status === "veroeffentlicht") &&
+					r.external?.previewUrl && (
+						<button
+							type="button"
+							className="btn compare-btn"
+							onClick={onCompare}
+						>
+							Vorher / Nachher vergleichen
+						</button>
+					)}
 
 				<div className="drawer__actions">
 					{r.status === "offen" && (
-						<button
-							type="button"
-							className="btn btn--primary"
-							disabled={!!busy}
-							onClick={() => run("send", () => api.action(r.id, "send"))}
-						>
-							{busy === "send" ? "Wird gesendet …" : "An den Agenten senden"}
-						</button>
+						<span className="send-row">
+							<EngineSelect
+								engines={engines}
+								value={sendEngine}
+								onChange={setSendEngine}
+							/>
+							<button
+								type="button"
+								className="btn btn--primary"
+								disabled={!!busy}
+								onClick={() =>
+									run("send", () =>
+										api.action(r.id, "send", { engine: sendEngine }),
+									)
+								}
+							>
+								{busy === "send" ? "Wird gesendet …" : "Einzeln senden"}
+							</button>
+						</span>
 					)}
 					{active && (
 						<button
@@ -148,7 +222,9 @@ export function RequestDetail({
 								>
 									{busy === "publish"
 										? "Veröffentliche …"
-										: "Ja, veröffentlichen"}
+										: batch
+											? `Ja, alle ${siblings.length} veröffentlichen`
+											: "Ja, veröffentlichen"}
 								</button>
 								<button
 									type="button"
@@ -167,12 +243,12 @@ export function RequestDetail({
 								Veröffentlichen
 							</button>
 						))}
-					{(r.status === "offen" || active) && (
+					{(r.status === "offen" || active) && !discarding && (
 						<button
 							type="button"
 							className="btn btn--quiet"
 							disabled={!!busy}
-							onClick={() => run("discard", () => api.action(r.id, "discard"))}
+							onClick={() => setDiscarding(true)}
 						>
 							Verwerfen
 						</button>
@@ -189,6 +265,58 @@ export function RequestDetail({
 					)}
 				</div>
 
+				{discarding && (
+					<form
+						className="followup discard"
+						onSubmit={(e) => {
+							e.preventDefault();
+							run("discard", () =>
+								api.discard(
+									r.id,
+									reason.trim(),
+									rememberReason && !!reason.trim(),
+								),
+							).then((ok) => ok && setDiscarding(false));
+						}}
+					>
+						<label htmlFor={reasonId}>
+							Warum verwerfen? <span className="muted">(freiwillig)</span>
+						</label>
+						<textarea
+							id={reasonId}
+							rows={2}
+							value={reason}
+							onChange={(e) => setReason(e.target.value)}
+							placeholder="z. B. zu werblich, zu lang"
+						/>
+						<label className="check">
+							<input
+								type="checkbox"
+								checked={rememberReason}
+								onChange={(e) => setRememberReason(e.target.checked)}
+							/>
+							Grund als Stilregel merken
+						</label>
+						{batch && (
+							<p className="muted small">
+								Verwirft den ganzen Sammelauftrag ({siblings.length} Wünsche).
+							</p>
+						)}
+						<span className="send-row">
+							<button type="submit" className="btn" disabled={!!busy}>
+								{busy === "discard" ? "Verwerfe …" : "Verwerfen"}
+							</button>
+							<button
+								type="button"
+								className="btn btn--quiet"
+								onClick={() => setDiscarding(false)}
+							>
+								Abbrechen
+							</button>
+						</span>
+					</form>
+				)}
+
 				{active && (
 					<form
 						className="followup"
@@ -196,8 +324,8 @@ export function RequestDetail({
 							e.preventDefault();
 							const t = text.trim();
 							if (!t) return;
-							run("follow", () => api.followUp(r.id, t)).then(() =>
-								setText(""),
+							run("follow", () => api.followUp(r.id, t, rememberFollow)).then(
+								(ok) => ok && setText(""),
 							);
 						}}
 					>
@@ -209,6 +337,14 @@ export function RequestDetail({
 							onChange={(e) => setText(e.target.value)}
 							placeholder="Was soll am Vorschlag anders werden?"
 						/>
+						<label className="check">
+							<input
+								type="checkbox"
+								checked={rememberFollow}
+								onChange={(e) => setRememberFollow(e.target.checked)}
+							/>
+							Als Stilregel merken (gilt künftig für jeden Auftrag)
+						</label>
 						<button
 							type="submit"
 							className="btn"

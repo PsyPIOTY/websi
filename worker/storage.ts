@@ -1,9 +1,13 @@
 import type {
 	ChangeRequest,
 	DirectoryEntry,
+	StyleRule,
 	VisibilityReport,
 } from "../core/types";
-import schema from "../migrations/0001_init.sql?raw";
+import schema1 from "../migrations/0001_init.sql?raw";
+import schema2 from "../migrations/0002_stil_kontingent.sql?raw";
+
+const schema = `${schema1};${schema2}`;
 
 /** Speicher-Schnittstelle. D1 im Betrieb, Arbeitsspeicher in Tests. */
 export interface Store {
@@ -18,7 +22,25 @@ export interface Store {
 	saveReport(report: VisibilityReport): Promise<void>;
 	listDirectories(siteId: string): Promise<DirectoryEntry[]>;
 	putDirectory(entry: DirectoryEntry): Promise<void>;
+	/** Regeln einer Website plus der Regeln für alle Websites. */
+	listStyle(siteId: string): Promise<StyleRule[]>;
+	getStyle(id: string): Promise<StyleRule | null>;
+	putStyle(rule: StyleRule): Promise<void>;
+	deleteStyle(id: string): Promise<void>;
+	getSetting<T>(key: string): Promise<T | null>;
+	putSetting(key: string, value: unknown): Promise<void>;
 }
+
+interface StyleRow {
+	id: string;
+	siteId: string;
+	text: string;
+	source: StyleRule["source"];
+	active: number;
+	createdAt: string;
+}
+
+const fromRow = (r: StyleRow): StyleRule => ({ ...r, active: r.active === 1 });
 
 export class D1Store implements Store {
 	private ready: Promise<void> | null = null;
@@ -133,12 +155,73 @@ export class D1Store implements Store {
 			.bind(e.siteId, e.directoryId, e.status, e.note, e.updatedAt)
 			.run();
 	}
+	async listStyle(siteId: string) {
+		await this.init();
+		const { results } = await this.db
+			.prepare(
+				"SELECT id, site_id AS siteId, text, source, active, created_at AS createdAt FROM style_rules WHERE site_id IN (?, 'alle') ORDER BY created_at",
+			)
+			.bind(siteId)
+			.all<StyleRow>();
+		return results.map(fromRow);
+	}
+
+	async getStyle(id: string) {
+		await this.init();
+		const row = await this.db
+			.prepare(
+				"SELECT id, site_id AS siteId, text, source, active, created_at AS createdAt FROM style_rules WHERE id = ?",
+			)
+			.bind(id)
+			.first<StyleRow>();
+		return row ? fromRow(row) : null;
+	}
+
+	async putStyle(r: StyleRule) {
+		await this.init();
+		await this.db
+			.prepare(
+				`INSERT INTO style_rules (id, site_id, text, source, active, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+				 ON CONFLICT(id) DO UPDATE SET site_id = ?2, text = ?3, active = ?5`,
+			)
+			.bind(r.id, r.siteId, r.text, r.source, r.active ? 1 : 0, r.createdAt)
+			.run();
+	}
+
+	async deleteStyle(id: string) {
+		await this.init();
+		await this.db
+			.prepare("DELETE FROM style_rules WHERE id = ?")
+			.bind(id)
+			.run();
+	}
+
+	async getSetting<T>(key: string) {
+		await this.init();
+		const row = await this.db
+			.prepare("SELECT value FROM settings WHERE key = ?")
+			.bind(key)
+			.first<{ value: string }>();
+		return row ? (JSON.parse(row.value) as T) : null;
+	}
+
+	async putSetting(key: string, value: unknown) {
+		await this.init();
+		await this.db
+			.prepare(
+				"INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2",
+			)
+			.bind(key, JSON.stringify(value))
+			.run();
+	}
 }
 
 export class MemoryStore implements Store {
 	requests = new Map<string, ChangeRequest>();
 	reports: VisibilityReport[] = [];
 	directories = new Map<string, DirectoryEntry>();
+	style = new Map<string, StyleRule>();
+	settings = new Map<string, string>();
 
 	async listRequests(siteId?: string) {
 		return [...this.requests.values()]
@@ -168,5 +251,26 @@ export class MemoryStore implements Store {
 	}
 	async putDirectory(e: DirectoryEntry) {
 		this.directories.set(`${e.siteId}/${e.directoryId}`, e);
+	}
+	async listStyle(siteId: string) {
+		return [...this.style.values()]
+			.filter((r) => r.siteId === siteId || r.siteId === "alle")
+			.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+	}
+	async getStyle(id: string) {
+		return this.style.get(id) ?? null;
+	}
+	async putStyle(r: StyleRule) {
+		this.style.set(r.id, { ...r });
+	}
+	async deleteStyle(id: string) {
+		this.style.delete(id);
+	}
+	async getSetting<T>(key: string) {
+		const v = this.settings.get(key);
+		return v === undefined ? null : (JSON.parse(v) as T);
+	}
+	async putSetting(key: string, value: unknown) {
+		this.settings.set(key, JSON.stringify(value));
 	}
 }
