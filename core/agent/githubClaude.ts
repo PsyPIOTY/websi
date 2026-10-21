@@ -26,9 +26,9 @@ interface GhPull {
 }
 
 /**
- * Claude über Peters Abo: Jeder Auftrag wird ein GitHub-Issue im Repo der
- * Website. Die Claude-GitHub-Action (mit Peters Abo-Token) reagiert darauf und
- * legt einen Branch bzw. Pull Request an. WEBSI liest das zurück.
+ * KI über Peters Abo: Jeder Auftrag wird ein GitHub-Issue im Repo der
+ * Website. Der WEBSI-Worker (oder die Claude-Action bzw. Routine) reagiert
+ * darauf und legt einen Branch bzw. Pull Request an. WEBSI liest das zurück.
  */
 export class GitHubClaudeAdapter implements AgentAdapter {
 	readonly id = "github-claude";
@@ -138,7 +138,7 @@ export class GitHubClaudeAdapter implements AgentAdapter {
 		);
 		const ref = new RegExp(`(^|\\D)#${n}(\\D|$)`);
 		return (
-			pulls.find((p) => p.head.ref.startsWith(`claude/issue-${n}-`)) ??
+			pulls.find((p) => isProposalBranch(p.head.ref, n)) ??
 			pulls.find((p) => p.body !== null && ref.test(p.body))
 		);
 	}
@@ -147,7 +147,7 @@ export class GitHubClaudeAdapter implements AgentAdapter {
 		const branches = await this.gh<{ name: string }[]>(
 			`${repo}/branches?per_page=100`,
 		);
-		return branches.find((b) => b.name.startsWith(`claude/issue-${n}-`))?.name;
+		return branches.find((b) => isProposalBranch(b.name, n))?.name;
 	}
 
 	async followUp(request: ChangeRequest, ctx: AgentContext, text: string) {
@@ -205,9 +205,21 @@ export class GitHubClaudeAdapter implements AgentAdapter {
 	}
 }
 
+/** Branch-Präfixe: eigener WEBSI-Worker sowie Claude-Action und Routine. */
+const PROPOSAL_PREFIXES = ["websi/issue-", "claude/issue-"];
+
+function isProposalBranch(name: string, n: string) {
+	return PROPOSAL_PREFIXES.some((p) => name.startsWith(`${p}${n}-`));
+}
+
 function isAgent(c: GhComment) {
 	const login = c.user?.login.toLowerCase() ?? "";
-	return c.user?.type === "Bot" || login.includes("claude");
+	// Der Worker kommentiert lokal unter Peters Konto, erkennbar an seiner Markierung.
+	return (
+		c.user?.type === "Bot" ||
+		login.includes("claude") ||
+		c.body.includes("<!-- websi-worker -->")
+	);
 }
 
 /** Entfernt Steuerzeilen der Action, damit im Editor nur die Antwort steht. */

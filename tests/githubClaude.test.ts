@@ -115,6 +115,42 @@ describe("Claude über GitHub", () => {
 		]);
 	});
 
+	it("erkennt den eigenen Worker an Branch und Markierung, auch unter Peters Konto", async () => {
+		const gh = fakeGitHub({
+			[`GET ${repo}/issues/42/comments`]: [
+				{
+					html_url: "c1",
+					created_at: "t1",
+					body: "<!-- websi-worker -->\n**Vorschlag fertig.** Kürzer.",
+					user: { login: "PsyPIOTY", type: "User" },
+				},
+			],
+			[`GET ${repo}/pulls`]: [],
+			[`GET ${repo}/branches`]: [{ name: "websi/issue-42-faq" }],
+		});
+		const adapter = new GitHubClaudeAdapter("t", gh.fetcher);
+		const r = {
+			...createRequest(
+				{
+					siteId: "humansource",
+					sectionId: "situation",
+					text: "x",
+					pagePath: "/",
+				},
+				"r1",
+				"t",
+			),
+			status: "in_arbeit" as const,
+			external: { adapter: "github-claude", id: "42", url: "" },
+		};
+		const update = await adapter.sync(r, ctx);
+		expect(update.status).toBe("vorschlag");
+		expect(update.branch).toBe("websi/issue-42-faq");
+		expect(update.messages.map((m) => m.text)).toEqual([
+			"**Vorschlag fertig.** Kürzer.",
+		]);
+	});
+
 	it("veröffentlicht nur per Merge des gefundenen Vorschlags", async () => {
 		const gh = fakeGitHub({
 			[`GET ${repo}/pulls`]: [],

@@ -33,6 +33,7 @@ Bearbeitet wird immer genau eine Website. Beim Wechsel lädt WEBSI deren Profil
 | `worker/` | Cloudflare Worker: API, Speicher (D1), Live-Vorschau |
 | `public/websi-bridge.js` | Läuft in der angezeigten Website und hängt die Nachrichtenfelder ein |
 | `src/` | Dashboard (React) |
+| `runner/` | WEBSI-Worker: arbeitet Aufträge mit austauschbarem Modell ab |
 | `templates/`, `docs/` | Vorlagen für die Abarbeitung der Aufträge, Schnittstellen |
 
 Die Schnittstellen für andere Systeme (Paco, KI-Betriebssystem) stehen in
@@ -53,13 +54,16 @@ Stationen, ändern aber nichts.
 ## KI-Anschluss (ohne API-Kosten)
 
 WEBSI legt jeden Auftrag als Issue mit Label `websi` im Repo der Website an.
-Abgearbeitet wird über Peters Claude-Abo, auf einem von zwei Wegen:
+Abgearbeitet wird vom eigenen **WEBSI-Worker** ([`docs/worker.md`](docs/worker.md)):
+ein kleines Programm, das das Issue liest, das Modell die Dateien ändern lässt,
+prüft und einen Pull Request anlegt. Das Modell ist austauschbar: Claude über
+Peters Abo (Standard), Codex über ein ChatGPT-Abo oder ein lokales Modell.
+Er läuft in GitHub (nur bei neuem Auftrag) oder auf dem eigenen Rechner.
 
-- **Weg A, GitHub Action:** [`templates/github-action/websi-claude.yml`](templates/github-action/websi-claude.yml)
-  ins Repo der Website kopieren, Secret `CLAUDE_CODE_OAUTH_TOKEN` setzen
-  (`claude setup-token`). Sofort, verbraucht Actions-Minuten.
-- **Weg B, Claude-Routine:** [`docs/routine-auftraege.md`](docs/routine-auftraege.md).
-  Holt in festen Abständen ab, keine Actions-Minuten.
+Alternativen mit demselben Ablauf: die offizielle Claude-Action
+([`templates/github-action/websi-claude.yml`](templates/github-action/websi-claude.yml))
+oder eine Claude-Routine ([`docs/routine-auftraege.md`](docs/routine-auftraege.md)).
+Nur einen Weg pro Website einschalten.
 
 WEBSI selbst braucht dafür ein GitHub-Token (fine-grained, nur für die
 Website-Repos: Issues, Pull Requests und Contents lesen/schreiben).

@@ -10,8 +10,9 @@
     "db:migrate:local": "wrangler d1 migrations apply websi --local",
     "db:migrate:remote": "wrangler d1 migrations apply websi --remote",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
-    "check": "biome check"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p runner",
+    "check": "biome check",
+    "worker": "node runner/websi-worker.ts"
   },
   "dependencies": {
     "node-html-parser": "^7.0.1",
@@ -23,6 +24,7 @@
     "@cloudflare/vite-plugin": "1.47.0",
     "@cloudflare/workers-types": "^5.20260722.1",
     "@testing-library/react": "^16.2.0",
+    "@types/node": "^22.20.5",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "6.0.4",
