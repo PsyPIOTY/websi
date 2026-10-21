@@ -1,4 +1,5 @@
-import type { ChangeRequest } from "../types";
+import { previewKey } from "../preview";
+import type { ChangeRequest, SiteProfile } from "../types";
 import {
 	type AgentAdapter,
 	type AgentContext,
@@ -25,7 +26,18 @@ interface GhPull {
 	state: string;
 	merged_at: string | null;
 	body: string | null;
-	head: { ref: string };
+	head: { ref: string; sha?: string };
+}
+
+interface GhCheckRuns {
+	check_runs: {
+		details_url: string | null;
+		output: {
+			title: string | null;
+			summary: string | null;
+			text: string | null;
+		};
+	}[];
 }
 
 /**
@@ -120,7 +132,7 @@ export class GitHubClaudeAdapter implements AgentAdapter {
 						: undefined,
 			};
 		});
-		const previewUrl = agentComments
+		const fromWorker = agentComments
 			.map((c) => workerMeta(c.body)?.preview)
 			.filter(Boolean)
 			.at(-1);
@@ -131,7 +143,14 @@ export class GitHubClaudeAdapter implements AgentAdapter {
 				status: "vorschlag",
 				messages,
 				proposalUrl: pull.html_url,
-				previewUrl,
+				previewUrl:
+					fromWorker ??
+					(await this.cloudflarePreview(
+						repo,
+						ctx,
+						pull.head.sha ?? pull.head.ref,
+						pull.number,
+					)),
 				branch: pull.head.ref,
 			};
 		}
@@ -142,11 +161,57 @@ export class GitHubClaudeAdapter implements AgentAdapter {
 				status: "vorschlag",
 				messages,
 				branch,
-				previewUrl,
+				previewUrl:
+					fromWorker ?? (await this.cloudflarePreview(repo, ctx, branch)),
 				proposalUrl: `https://github.com/${ctx.site.repo.owner}/${ctx.site.repo.name}/compare/${base}...${branch}`,
 			};
 		}
 		return { status: messages.length ? "in_arbeit" : "unveraendert", messages };
+	}
+
+	/**
+	 * Vorschau ohne eigenes Token: Ist das Repo in Cloudflare mit „Workers Builds“
+	 * verbunden, baut Cloudflare jeden Branch selbst und meldet die Vorschau-Adresse
+	 * als Prüfung (Check) am Commit oder als Kommentar am Pull Request. WEBSI sucht
+	 * dort nach einer Adresse derselben Website. Fehler hier halten nichts auf.
+	 */
+	private async cloudflarePreview(
+		repo: string,
+		ctx: AgentContext,
+		ref: string,
+		pullNumber?: number,
+	) {
+		const texts: string[] = [];
+		const safe = async <T>(path: string) => {
+			try {
+				return await this.gh<T>(path);
+			} catch {
+				return null;
+			}
+		};
+		const checks = await safe<GhCheckRuns>(
+			`${repo}/commits/${encodeURIComponent(ref)}/check-runs?per_page=50`,
+		);
+		for (const c of checks?.check_runs ?? []) {
+			texts.push(
+				c.details_url ?? "",
+				c.output.title ?? "",
+				c.output.summary ?? "",
+				c.output.text ?? "",
+			);
+		}
+		const statuses = await safe<
+			{ target_url: string | null; description: string | null }[]
+		>(`${repo}/commits/${encodeURIComponent(ref)}/statuses?per_page=50`);
+		for (const st of statuses ?? [])
+			texts.push(st.target_url ?? "", st.description ?? "");
+		if (pullNumber) {
+			const prComments = await safe<GhComment[]>(
+				`${repo}/issues/${pullNumber}/comments?per_page=100`,
+			);
+			for (const c of prComments ?? []) texts.push(c.body);
+		}
+		return pickPreviewUrl(texts.join("\n"), ctx.site);
 	}
 
 	private async findPull(repo: string, n: string) {
@@ -240,6 +305,25 @@ function isAgent(c: GhComment) {
 		login.includes("claude") ||
 		c.body.includes("<!-- websi-worker")
 	);
+}
+
+/**
+ * Sucht in Texten (Checks, Kommentare) die Vorschau-Adresse derselben Website,
+ * z. B. https://websi-12-konzeptstudio.x.workers.dev. Eine Adresse mit
+ * Branch-Namen (bleibt gleich) geht vor einer mit Versionsnummer (8 Zeichen hex).
+ */
+export function pickPreviewUrl(text: string, site: SiteProfile) {
+	const urls = (
+		text.match(/https:\/\/[a-z0-9.-]+\.workers\.dev[^\s"'<>)\]]*/gi) ?? []
+	)
+		.map((u) => u.replace(/[.,;]+$/, ""))
+		.filter((u) => {
+			const key = previewKey(site, u);
+			return key !== null && key !== site.id;
+		});
+	const alias = (u: string) => new URL(u).host.split(".")[0];
+	const byBranch = urls.filter((u) => !/^[0-9a-f]{8}-/.test(alias(u)));
+	return (byBranch.at(-1) ?? urls.at(-1)) || undefined;
 }
 
 interface WorkerMeta {

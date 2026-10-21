@@ -58,18 +58,25 @@ node pfad/zu/websi-worker.ts --poll --every 10 --only ollama  # nur lokale Auftr
 
 ## Vorschau-Link
 
-Ist `WEBSI_PREVIEW_CMD` gesetzt (in GitHub als Repository-Variable), baut der
-Worker nach dem Push eine Testversion, z. B. für Websites auf Cloudflare Workers:
+**Ohne Token (empfohlen): Cloudflare Workers Builds.** Einmal im
+Cloudflare-Dashboard das Repo der Website verbinden: Workers & Pages → die
+Website → Settings → Builds → „Connect“ (GitHub-Repo wählen) und Builds für
+Nicht-Produktions-Branches einschalten. Danach baut Cloudflare jeden
+Vorschlags-Branch selbst und meldet die Vorschau-Adresse als Prüfung am Commit
+bzw. als Kommentar am Pull Request. WEBSI liest sie dort aus (nur Adressen
+derselben Website, `…-<worker>.<konto>.workers.dev`). Kein Token, keine
+Actions-Minuten.
+
+**Mit Token (Alternative).** Ist `WEBSI_PREVIEW_CMD` gesetzt (in GitHub als
+Repository-Variable), baut der Worker nach dem Push selbst eine Testversion:
 
 ```
 npm run build && npx wrangler versions upload --preview-alias {alias}
 ```
 
-`{alias}` wird zu `websi-<Issue-Nr>`. Die ausgegebene Adresse
-(`https://websi-12-<worker>.<konto>.workers.dev`) steht im Vorschlag; WEBSI
-zeigt sie im Vergleich Vorher/Nachher. Dafür braucht das Repo das Secret
-`CLOUDFLARE_API_TOKEN` und in `wrangler.jsonc` aktivierte Vorschau-Adressen
-(`"preview_urls": true`).
+`{alias}` wird zu `websi-<Issue-Nr>`. Dafür braucht das Repo das Secret
+`CLOUDFLARE_API_TOKEN` und in `wrangler.jsonc` `"preview_urls": true`.
+Meldet der Worker eine Vorschau, hat sie Vorrang.
 
 ## Rückmeldung an WEBSI
 
