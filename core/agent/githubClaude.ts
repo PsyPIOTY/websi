@@ -1,0 +1,221 @@
+import type { ChangeRequest } from "../types";
+import {
+	type AgentAdapter,
+	type AgentContext,
+	type AgentUpdate,
+	briefing,
+	type DispatchResult,
+} from "./adapter";
+
+type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
+
+interface GhComment {
+	html_url: string;
+	created_at: string;
+	body: string;
+	user: { login: string; type: string } | null;
+}
+
+interface GhPull {
+	number: number;
+	html_url: string;
+	state: string;
+	merged_at: string | null;
+	body: string | null;
+	head: { ref: string };
+}
+
+/**
+ * Claude über Peters Abo: Jeder Auftrag wird ein GitHub-Issue im Repo der
+ * Website. Die Claude-GitHub-Action (mit Peters Abo-Token) reagiert darauf und
+ * legt einen Branch bzw. Pull Request an. WEBSI liest das zurück.
+ */
+export class GitHubClaudeAdapter implements AgentAdapter {
+	readonly id = "github-claude";
+	readonly label = "Claude über dein Abo (GitHub)";
+
+	constructor(
+		private readonly token: string | undefined,
+		private readonly fetcher: FetchLike = (input, init) => fetch(input, init),
+	) {}
+
+	ready() {
+		return Boolean(this.token);
+	}
+
+	private async gh<T>(path: string, init: RequestInit = {}): Promise<T> {
+		const res = await this.fetcher(`https://api.github.com${path}`, {
+			...init,
+			headers: {
+				accept: "application/vnd.github+json",
+				authorization: `Bearer ${this.token}`,
+				"user-agent": "websi",
+				"x-github-api-version": "2022-11-28",
+				...(init.body ? { "content-type": "application/json" } : {}),
+				...(init.headers ?? {}),
+			},
+		});
+		if (!res.ok) {
+			const text = await res.text().catch(() => "");
+			throw new Error(
+				`GitHub ${res.status} bei ${path}: ${text.slice(0, 200)}`,
+			);
+		}
+		if (res.status === 204) return undefined as T;
+		return (await res.json()) as T;
+	}
+
+	private repoPath(ctx: AgentContext) {
+		return `/repos/${ctx.site.repo.owner}/${ctx.site.repo.name}`;
+	}
+
+	async dispatch(
+		request: ChangeRequest,
+		ctx: AgentContext,
+	): Promise<DispatchResult> {
+		const short = request.text.replace(/\s+/g, " ").slice(0, 60);
+		const body = [
+			"@claude",
+			"",
+			briefing(request, ctx),
+			"",
+			`<!-- websi:${JSON.stringify({ requestId: request.id, siteId: request.siteId, sectionId: request.sectionId })} -->`,
+		].join("\n");
+		const issue = await this.gh<{ number: number; html_url: string }>(
+			`${this.repoPath(ctx)}/issues`,
+			{
+				method: "POST",
+				body: JSON.stringify({
+					title: `[WEBSI] ${ctx.site.name} · ${ctx.section.label}: ${short}`,
+					body,
+					labels: [ctx.site.agent.label],
+				}),
+			},
+		);
+		return { id: String(issue.number), url: issue.html_url };
+	}
+
+	async sync(request: ChangeRequest, ctx: AgentContext): Promise<AgentUpdate> {
+		const n = request.external?.id;
+		if (!n) return { status: "unveraendert", messages: [] };
+		const repo = this.repoPath(ctx);
+		const comments = await this.gh<GhComment[]>(
+			`${repo}/issues/${n}/comments?per_page=100`,
+		);
+		const messages = comments
+			.filter((c) => isAgent(c))
+			.map((c) => ({
+				at: c.created_at,
+				text: cleanComment(c.body),
+				url: c.html_url,
+			}));
+
+		const pull = await this.findPull(repo, n);
+		if (pull) {
+			return {
+				status: "vorschlag",
+				messages,
+				proposalUrl: pull.html_url,
+				branch: pull.head.ref,
+			};
+		}
+		const branch = await this.findBranch(repo, n);
+		if (branch) {
+			const base = ctx.site.repo.baseBranch;
+			return {
+				status: "vorschlag",
+				messages,
+				branch,
+				proposalUrl: `https://github.com/${ctx.site.repo.owner}/${ctx.site.repo.name}/compare/${base}...${branch}`,
+			};
+		}
+		return { status: messages.length ? "in_arbeit" : "unveraendert", messages };
+	}
+
+	private async findPull(repo: string, n: string) {
+		const pulls = await this.gh<GhPull[]>(
+			`${repo}/pulls?state=all&per_page=50&sort=created&direction=desc`,
+		);
+		const ref = new RegExp(`(^|\\D)#${n}(\\D|$)`);
+		return (
+			pulls.find((p) => p.head.ref.startsWith(`claude/issue-${n}-`)) ??
+			pulls.find((p) => p.body !== null && ref.test(p.body))
+		);
+	}
+
+	private async findBranch(repo: string, n: string) {
+		const branches = await this.gh<{ name: string }[]>(
+			`${repo}/branches?per_page=100`,
+		);
+		return branches.find((b) => b.name.startsWith(`claude/issue-${n}-`))?.name;
+	}
+
+	async followUp(request: ChangeRequest, ctx: AgentContext, text: string) {
+		const n = request.external?.id;
+		if (!n) throw new Error("Auftrag wurde noch nicht gesendet");
+		await this.gh(`${this.repoPath(ctx)}/issues/${n}/comments`, {
+			method: "POST",
+			body: JSON.stringify({ body: `@claude ${text}` }),
+		});
+	}
+
+	async publish(request: ChangeRequest, ctx: AgentContext) {
+		const n = request.external?.id;
+		if (!n) throw new Error("Auftrag wurde noch nicht gesendet");
+		const repo = this.repoPath(ctx);
+		let pull = await this.findPull(repo, n);
+		if (!pull) {
+			const branch =
+				request.external?.branch ?? (await this.findBranch(repo, n));
+			if (!branch) throw new Error("Kein Vorschlag gefunden");
+			pull = await this.gh<GhPull>(`${repo}/pulls`, {
+				method: "POST",
+				body: JSON.stringify({
+					title: `WEBSI: ${ctx.section.label} (${ctx.site.name})`,
+					head: branch,
+					base: ctx.site.repo.baseBranch,
+					body: `Closes #${n}\n\nVon Peter in WEBSI freigegeben.`,
+				}),
+			});
+		}
+		if (!pull.merged_at) {
+			await this.gh(`${repo}/pulls/${pull.number}/merge`, {
+				method: "PUT",
+				body: JSON.stringify({ merge_method: "squash" }),
+			});
+		}
+		return { url: pull.html_url };
+	}
+
+	async discard(request: ChangeRequest, ctx: AgentContext) {
+		const n = request.external?.id;
+		if (!n) return;
+		const repo = this.repoPath(ctx);
+		const pull = await this.findPull(repo, n);
+		if (pull && pull.state === "open") {
+			await this.gh(`${repo}/pulls/${pull.number}`, {
+				method: "PATCH",
+				body: JSON.stringify({ state: "closed" }),
+			});
+		}
+		await this.gh(`${repo}/issues/${n}`, {
+			method: "PATCH",
+			body: JSON.stringify({ state: "closed", state_reason: "not_planned" }),
+		});
+	}
+}
+
+function isAgent(c: GhComment) {
+	const login = c.user?.login.toLowerCase() ?? "";
+	return c.user?.type === "Bot" || login.includes("claude");
+}
+
+/** Entfernt Steuerzeilen der Action, damit im Editor nur die Antwort steht. */
+export function cleanComment(body: string) {
+	return body
+		.replace(/<!--[\s\S]*?-->/g, "")
+		.replace(/^---$[\s\S]*$/m, "")
+		.replace(/\[View job run\]\([^)]*\)/g, "")
+		.trim()
+		.slice(0, 2000);
+}
