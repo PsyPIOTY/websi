@@ -12,7 +12,7 @@ zusammenarbeiten soll. Alle Typen stehen in [`core/types.ts`](../core/types.ts).
   "sectionId": "offers",
   "text": "Kachel Paartherapie zuerst, Text kürzer",
   "pin": { "x": 42, "y": 18, "hint": "Paartherapie" },
-  "pagePath": "/?concept=erstes-gespraech&frame=eigen",
+  "pagePath": "/praxis",
   "status": "offen | in_arbeit | vorschlag | veroeffentlicht | verworfen",
   "engine": "claude | codex | ollama",
   "batchId": "github-claude-42",
