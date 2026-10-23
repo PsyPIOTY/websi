@@ -8,7 +8,7 @@ an und fügst einen Schlüssel ein. Den Rest machen
 | --- | --- | --- |
 | 1. Skript starten | MacBook | 20 Min. |
 | 2. WEBSI aufs iPhone | iPhone | 2 Min. |
-| 3. Veröffentlichen verbinden | MacBook, Browser | 10 Min. |
+| 3. Vorschau verbinden | MacBook, Browser | 10 Min. |
 | 4. Helfer auf dem Mac mini | Mac mini | 10 Min. |
 | 5. Erster Wunsch | iPhone | 15 Min. |
 
@@ -49,11 +49,11 @@ eine neue WEBSI-Fassung online.
 In Safari die WEBSI-Adresse öffnen, anmelden, dann „Teilen“ und „Zum
 Home-Bildschirm“.
 
-## 3. Veröffentlichen verbinden (MacBook, Browser)
+## 3. Vorschau verbinden (MacBook, Browser)
 
-Danach baut Cloudflare die Website selbst: Jeder Vorschlag bekommt einen
-Vorschau-Link, und nach deinem Klick auf „Veröffentlichen“ geht er online.
-Kein Terminal, keine GitHub-Minuten.
+Danach baut Cloudflare jeden Vorschlag als Vorschau-Link, ohne Terminal und
+ohne GitHub-Minuten. Cloudflare ist dabei nur die Werkstatt: Deine Websites
+bleiben bei All-Inkl.
 
 [Workers & Pages](https://dash.cloudflare.com/?to=/:account/workers-and-pages),
 dann konzeptstudio, „Settings“, „Build“, „Connect“:
