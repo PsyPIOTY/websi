@@ -18,8 +18,9 @@ der Website bekommen. WEBSI legt Live-Fassung und Vorschlag übereinander; ein
 Schieber zeigt den Unterschied, beide scrollen gemeinsam. „Veröffentlichen“
 führt den Vorschlag zusammen; ohne diesen Klick geht nichts live.
 
-**Stil-Gedächtnis.** Regeln wie „Du statt Sie“ gehen mit jedem Auftrag mit, für
-eine Website oder für alle. WEBSI schlägt Regeln aus Nachbesserungen und
+**Stil-Gedächtnis.** Regeln wie „Ansprache mit ‚Sie‘“ gehen mit jedem Auftrag
+mit, für eine Website oder für alle. WEBSI startet mit Peters Regeln
+(`startStyle` in `sites/index.ts`) und schlägt weitere aus Nachbesserungen und
 Verwerf-Gründen vor.
 
 **Kontingent.** Oben rechts: Läufe je KI heute und in den letzten 5 Stunden,

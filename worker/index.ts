@@ -1,4 +1,4 @@
-import { siteProfiles } from "../sites";
+import { siteProfiles, startStyle } from "../sites";
 import { type AccessEnv, isAllowed } from "./access";
 import { createApi } from "./api";
 import { handleMcp } from "./mcp";
@@ -45,6 +45,7 @@ export default {
 			sites: siteProfiles,
 			env,
 			scan: (site) => scanSite(site),
+			startStyle,
 		});
 		if (isMcp) return handleMcp(request, api.handle);
 		const response = await api.handle(request);
