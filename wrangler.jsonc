@@ -18,7 +18,6 @@
 		}
 	],
 	"vars": {
-		"ALLOWED_EMAIL": "",
 		"AGENT_MODE": "auto"
 	}
 }

@@ -8,8 +8,9 @@ export const praxis: SiteProfile = {
 	stage: "entwurf",
 	url: "https://konzeptstudio.peter-jarek.workers.dev",
 	// Konzept 09 „Das erste Gespräch“ ist die Basis; Elemente aus 04 und 08 kommen dazu.
-	editorPath: "/?concept=erstes-gespraech&frame=eigen",
-	pages: ["/?concept=erstes-gespraech&frame=eigen"],
+	// /praxis zeigt es ohne Konzeptstudio und liefert den ganzen Inhalt im HTML aus.
+	editorPath: "/praxis",
+	pages: ["/praxis"],
 	repo: {
 		owner: "PsyPIOTY",
 		name: "psychologe-konzeptstudio",
@@ -17,8 +18,6 @@ export const praxis: SiteProfile = {
 		path: "src/components/studio/frames",
 	},
 	agent: { adapter: "github-claude", label: "websi" },
-	// Im Editor nur die Website zeigen, nicht die Bedienelemente des Konzeptstudios.
-	preview: { click: ['.pure-view-toggle[aria-pressed="false"]'], hide: [".pure-view-exit"] },
 	sections: [
 		{ id: "hero", label: "Einleitung", selector: `${anchor("hero")}, ${anchor("hero.approved")}` },
 		{ id: "concerns", label: "Anliegen", selector: anchor("concerns") },
@@ -42,7 +41,8 @@ export const praxis: SiteProfile = {
 			{ phrase: "Kommunikations-Coaching" },
 			{ phrase: "Psychologe Bad Belzig" },
 		],
-		schemaTypes: ["Psychologist", "LocalBusiness"],
+		// "Psychologist" gibt es bei schema.org nicht.
+		schemaTypes: ["LocalBusiness"],
 		googleBusinessProfile: false,
 	},
 	directories: [

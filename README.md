@@ -87,14 +87,26 @@ Website-Repos: Issues, Pull Requests und Contents lesen/schreiben).
 
 ## Veröffentlichen auf Cloudflare
 
+Am MacBook in einem Durchgang: [`docs/einrichten.md`](docs/einrichten.md)
+mit dem Skript [`scripts/einrichten-macbook.sh`](scripts/einrichten-macbook.sh).
+Es legt die Datenbank `websi` (EU) an, lädt WEBSI hoch und setzt die Secrets.
+Noch einmal gestartet, bringt es eine neue Fassung online.
+
+Von Hand:
+
 1. `npx wrangler d1 create websi` und die ausgegebene `database_id` in
    `wrangler.jsonc` eintragen. Die Tabellen legt der Worker selbst an.
-2. `npx wrangler secret put GITHUB_TOKEN` und für die MCP-Brücke
-   `npx wrangler secret put MCP_TOKEN` (langes Zufallswort)
-3. `ALLOWED_EMAIL` in `wrangler.jsonc` auf Peters Adresse setzen und im
-   Cloudflare-Dashboard unter Zero Trust → Access eine Anwendung für die
-   WEBSI-Adresse anlegen (nur diese E-Mail).
-4. `npm run deploy`
+2. `npm run deploy`
+3. Secrets mit `npx wrangler secret put <NAME>`:
+   - `GITHUB_TOKEN`: fine-grained, nur für die Website-Repos
+   - `ALLOWED_EMAIL`: Peters Adresse; ohne sie ist WEBSI nur lokal offen
+   - `ACCESS_TEAM_DOMAIN`: Teamname von Cloudflare Access, z. B. `peterjarek`
+   - optional `ACCESS_AUD` (Audience-Tag der Access-Anwendung) und für die
+     MCP-Brücke `MCP_TOKEN` (langes Zufallswort)
+4. Im Cloudflare-Dashboard bei websi: „Access“, „Protect this Worker behind
+   Access“, „All traffic“. WEBSI prüft zusätzlich selbst das signierte
+   Access-Token ([`worker/access.ts`](worker/access.ts)), nicht nur die
+   E-Mail-Kopfzeile.
 
 ## Neue Website hinzufügen
 

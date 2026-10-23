@@ -61,7 +61,7 @@ export interface SiteProfile {
 		region?: string;
 		postalCode?: string;
 		keywords: KeywordTarget[];
-		/** Erwartete schema.org-Typen, z. B. "Psychologist", "ProfessionalService". */
+		/** Erwartete schema.org-Typen, z. B. "LocalBusiness", "ProfessionalService". */
 		schemaTypes: string[];
 		googleBusinessProfile: boolean;
 	};
