@@ -61,8 +61,9 @@ Aktionen auf einen Wunsch eines Sammelauftrags antworten mit dem Wunsch und
 
 `POST /api/websi/mcp`, Model Context Protocol über HTTP (JSON-RPC 2.0, ohne
 Sitzung). Zugang mit `Authorization: Bearer <MCP_TOKEN>`. Hinter Cloudflare
-Access braucht dieser eine Pfad eine Ausnahme (Bypass-Regel für
-`/api/websi/mcp`), sonst kommt der Client nicht durch; das Token schützt ihn.
+Access brauchen die beiden Token-Pfade eine Ausnahme (Bypass-Regeln für
+`/api/websi/mcp` und `/api/websi/hinweise`), sonst kommt der Client nicht
+durch; das Token schützt sie.
 
 Werkzeuge: `websi_sites`, `websi_site`, `websi_requests`, `websi_create_request`
 (sammelt standardmäßig), `websi_send_batch`, `websi_followup`, `websi_sync`,
@@ -114,7 +115,9 @@ Hinweis je Art und Website.
 
 Für Pacos „Wartet auf dich“: `title` und `detail` zeigen, „ansehen“ öffnet
 `link` (WEBSI zeigt den vorbereiteten Auftrag mit „Einzeln senden“). Die
-`fehler` sind für Paco, nicht für Peter.
+`fehler` sind für Paco, nicht für Peter. Wer nur lesen darf, holt dieselbe
+Antwort per `GET /api/websi/hinweise` mit `Authorization: Bearer <MCP_TOKEN>`,
+ohne MCP.
 
 Einschalten, sobald die Seite online ist: im Profil `stage: "live"` und
 `seo.statistik` (`cloudflareSiteTag`, `searchConsole`, z. B.

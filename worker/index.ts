@@ -17,6 +17,17 @@ interface Env extends AccessEnv, MonitorEnv {
 }
 
 const MCP_PATH = "/api/websi/mcp";
+/** Nur lesend, für Pacos Dashboard: dieselben Hinweise wie websi_hinweise. */
+const NOTICES_PATH = "/api/websi/hinweise";
+
+/** Pfade, die ein Client mit MCP_TOKEN statt Access-Anmeldung erreicht. */
+export function tokenPath(request: Request) {
+	const { pathname } = new URL(request.url);
+	return (
+		pathname === MCP_PATH ||
+		(pathname === NOTICES_PATH && request.method === "GET")
+	);
+}
 
 /** Vergleich in konstanter Zeit, damit das Token nicht erraten werden kann. */
 function sameToken(a: string, b: string) {
@@ -35,7 +46,10 @@ export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		const isMcp = new URL(request.url).pathname === MCP_PATH;
 		if (
-			!((isMcp && mcpAllowed(request, env)) || (await isAllowed(request, env)))
+			!(
+				(tokenPath(request) && mcpAllowed(request, env)) ||
+				(await isAllowed(request, env))
+			)
 		)
 			return new Response("Kein Zugang", { status: 403 });
 

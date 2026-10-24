@@ -10,6 +10,7 @@ import {
 import type { SiteProfile, VisibilityReport } from "../core/types";
 import { praxis } from "../sites/praxis";
 import { createApi } from "../worker/api";
+import { tokenPath } from "../worker/index";
 import { TOOLS } from "../worker/mcp";
 import { type MonitorEnv, runMonitor } from "../worker/monitor";
 import { MemoryStore } from "../worker/storage";
@@ -413,5 +414,17 @@ describe("Monatsprüfung, Ablauf", () => {
 		const { call } = setup();
 		const { data } = await call("POST", "hinweise/pruefen");
 		expect(data.monat).toMatchObject({ key: "2026-10" });
+	});
+
+	it("lässt Pacos Dashboard die Hinweise mit Token nur lesen", () => {
+		const at = (method: string, path: string) =>
+			tokenPath(
+				new Request(`https://websi.test/api/websi/${path}`, { method }),
+			);
+		expect(at("GET", "hinweise")).toBe(true);
+		expect(at("POST", "mcp")).toBe(true);
+		expect(at("POST", "hinweise/pruefen")).toBe(false);
+		expect(at("POST", "hinweise")).toBe(false);
+		expect(at("GET", "requests")).toBe(false);
 	});
 });
