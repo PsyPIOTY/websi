@@ -33,6 +33,11 @@ Stand der Verzeichniseinträge (Google-Profil, Bing, therapie.de …).
 
 **Aufträge.** Alle Wünsche der aktiven Website mit Filter nach Status.
 
+**Hinweise.** Einmal im Monat prüft WEBSI jede Website, die online ist:
+kaputte Links, Google-Platz, Besucher. Es meldet sich nur, wenn etwas zu tun
+ist, und legt dann einen fertigen Auftrag an. Paco kann ihn unter „Wartet auf
+dich“ zeigen ([`docs/schnittstellen.md`](docs/schnittstellen.md#monatsprüfung-hinweise)).
+
 **MCP-Brücke.** Paco, das KI-Betriebssystem oder ein Claude-Client sprechen
 WEBSI über MCP an (`/api/websi/mcp`). Siehe [`docs/schnittstellen.md`](docs/schnittstellen.md).
 

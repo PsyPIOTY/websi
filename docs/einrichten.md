@@ -94,3 +94,11 @@ Ohne deinen Klick geht nichts online.
 Unter „Stil“ stehen deine Regeln für alle Seiten, zum Beispiel „Ansprache mit
 ‚Sie‘“. Sie gehen mit jedem Wunsch mit. Dort kannst du sie ändern oder
 abschalten.
+
+## Später: Hinweise einschalten
+
+Erst wenn die Praxisseite bei All-Inkl online ist, nicht am Termin. Dann
+braucht es zwei Lese-Schlüssel (MacBook, etwa 15 Minuten, Paco führt dich):
+einen bei Cloudflare für die Besucherzahlen, einen bei Google für Search
+Console. Danach meldet sich WEBSI nur, wenn etwas zu tun ist: kaputter Link,
+Google-Platz deutlich gefallen oder viel weniger Besucher.

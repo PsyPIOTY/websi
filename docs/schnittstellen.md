@@ -48,6 +48,8 @@ Alle Pfade unter `/api/websi/`, Antworten als JSON.
 | GET | `style/:siteId` | Stil-Gedächtnis: `{ rules, suggestions }` |
 | POST | `style/:siteId` | Neue Regel `{ text, scope?: "alle" }` |
 | PATCH, DELETE | `style/:siteId/:id` | Regel ändern `{ active?, text?, scope? }` oder löschen |
+| GET | `hinweise` | Offene Hinweise der Monatsprüfung, siehe unten |
+| POST | `hinweise/pruefen` | Monatsprüfung sofort ausführen |
 | GET | `usage` | Kontingent je KI und Actions-Minuten |
 | PUT | `usage/limits` | Richtwerte pro Tag `{ claude: 25, codex: 25, ollama: null }` |
 | POST | `mcp` | MCP-Brücke (JSON-RPC), siehe unten |
@@ -64,7 +66,8 @@ Access braucht dieser eine Pfad eine Ausnahme (Bypass-Regel für
 
 Werkzeuge: `websi_sites`, `websi_site`, `websi_requests`, `websi_create_request`
 (sammelt standardmäßig), `websi_send_batch`, `websi_followup`, `websi_sync`,
-`websi_style`, `websi_add_style_rule`, `websi_scan`, `websi_usage`.
+`websi_style`, `websi_add_style_rule`, `websi_scan`, `websi_hinweise`,
+`websi_pruefen`, `websi_usage`.
 Veröffentlichen und Verwerfen gibt es bewusst nicht: das bleibt Peters Klick.
 
 Beispiel für einen Claude-Client:
@@ -73,6 +76,55 @@ Beispiel für einen Claude-Client:
 { "mcpServers": { "websi": { "type": "http", "url": "https://<websi-adresse>/api/websi/mcp",
   "headers": { "Authorization": "Bearer <MCP_TOKEN>" } } } }
 ```
+
+## Monatsprüfung (Hinweise)
+
+Meldet sich nur, wenn etwas zu tun ist (Peters Wahl). Läuft täglich um 05:00
+UTC per Cron, zählt die Aufrufe der Vortage und prüft ab dem 4. einmal im Monat
+jede Website mit `stage: "live"`:
+
+| Art | Meldet, wenn | Quelle |
+| --- | --- | --- |
+| `links` | ein Link 404, 410, 5xx oder gar nicht antwortet, zweimal geprüft | die Seiten selbst |
+| `google` | ein Suchbegriff aus dem Profil im Monatsschnitt 3 Plätze oder von Seite 1 fällt, ab 10 Einblendungen | Search Console |
+| `besuche` | 40 % weniger Aufrufe pro Tag als im Vormonat, ab 50 Aufrufen und mit Zahlen für 80 % der Tage | Cloudflare Web Analytics |
+
+Die Schwellen stehen in `SCHWELLEN` in [`core/monitor.ts`](../core/monitor.ts).
+Je Hinweis legt WEBSI einen Auftrag an: gesammelt, `ganze-seite`, Ereignis von
+`websi`. Er wartet, bis Peter ihn losschickt oder verwirft. Verworfenes kommt
+nicht wieder, reparierte Links erledigen sich von selbst, höchstens ein offener
+Hinweis je Art und Website.
+
+```json
+{
+  "hinweise": [{
+    "id": "uuid", "siteId": "praxis", "site": "Praxis Peter Jarek", "kind": "google",
+    "key": "google:2026-10",
+    "title": "Praxis Peter Jarek bei Google gefallen",
+    "detail": "„Psychologe Bad Belzig“: Platz 6 → 11. WEBSI hat einen Auftrag vorbereitet.",
+    "requestId": "uuid", "createdAt": "ISO-Zeit",
+    "link": "https://<websi-adresse>/#site=praxis&tab=auftraege&auftrag=<requestId>"
+  }],
+  "pruefung": {
+    "tag": { "at": "ISO-Zeit", "fehler": [] },
+    "monat": { "key": "2026-10", "at": "ISO-Zeit", "hinweise": 1, "fehler": [] }
+  }
+}
+```
+
+Für Pacos „Wartet auf dich“: `title` und `detail` zeigen, „ansehen“ öffnet
+`link` (WEBSI zeigt den vorbereiteten Auftrag mit „Einzeln senden“). Die
+`fehler` sind für Paco, nicht für Peter.
+
+Einschalten, sobald die Seite online ist: im Profil `stage: "live"` und
+`seo.statistik` (`cloudflareSiteTag`, `searchConsole`, z. B.
+`sc-domain:peterjarek.de`), dazu `CF_ACCOUNT_ID`, `CF_ANALYTICS_TOKEN` (nur
+„Account Analytics: Read“) und `GSC_SERVICE_ACCOUNT` (JSON-Schlüssel eines
+Google-Dienstkontos, in Search Console als Nutzer mit eingeschränkten Rechten
+eingetragen) per `wrangler secret put`. Der Zähler ohne Cookies kommt als eine
+Zeile in die Seite, die Datenschutzerklärung nennt ihn. Fehlt eine Quelle,
+entfällt nur diese Prüfung. Der kostenlose Cloudflare-Plan erlaubt 50 Abrufe je
+Lauf: WEBSI hört bei 45 auf und prüft höchstens 25 Links je Website.
 
 ## Neue KI oder neuer Ausführer
 
