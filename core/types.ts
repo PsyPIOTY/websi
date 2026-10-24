@@ -64,6 +64,13 @@ export interface SiteProfile {
 		/** Erwartete schema.org-Typen, z. B. "LocalBusiness", "ProfessionalService". */
 		schemaTypes: string[];
 		googleBusinessProfile: boolean;
+		/** Quellen der Monatsprüfung; erst eintragen, wenn die Seite online ist. */
+		statistik?: {
+			/** Cloudflare Web Analytics: Site-Tag des Zählers ohne Cookies. */
+			cloudflareSiteTag?: string;
+			/** Search-Console-Property, z. B. „sc-domain:peterjarek.de“. */
+			searchConsole?: string;
+		};
 	};
 	directories: DirectoryDef[];
 	notes?: string;
@@ -200,3 +207,17 @@ export interface StyleRule {
 }
 
 export const ALL_SITES = "alle";
+
+/** Hinweis der Monatsprüfung. Kommt nur, wenn etwas zu tun ist. */
+export interface Notice {
+	id: string;
+	siteId: string;
+	kind: "links" | "google" | "besuche";
+	/** Gleiches Problem, gleicher Schlüssel: Was Peter verwirft, kommt nicht wieder. */
+	key: string;
+	title: string;
+	detail: string;
+	/** Der vorbereitete Auftrag (gesammelt, noch nicht losgeschickt). */
+	requestId: string;
+	createdAt: string;
+}

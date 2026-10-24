@@ -5,7 +5,7 @@ import { siteProfiles } from "../sites";
 import { createApi } from "../worker/api";
 import { MemoryStore } from "../worker/storage";
 
-function setup(at = "2026-10-21T21:00:00Z") {
+function setup(at = "2026-10-21T21:00:00Z", startStyle?: string[]) {
 	const store = new MemoryStore();
 	let n = 0;
 	const api = createApi({
@@ -14,6 +14,7 @@ function setup(at = "2026-10-21T21:00:00Z") {
 		env: { AGENT_MODE: "test" },
 		uuid: () => `r${++n}`,
 		now: () => new Date(at),
+		startStyle,
 		scan: async (site): Promise<VisibilityReport> => ({
 			siteId: site.id,
 			scannedAt: at,
@@ -144,6 +145,34 @@ describe("Stil-Gedächtnis", () => {
 			"Wärmer formulieren",
 			"Zu werblich",
 		]);
+	});
+
+	it("legt die Start-Regeln einmal für alle an, gelöschte kommen nicht wieder", async () => {
+		const { call, store } = setup(undefined, [
+			"Sie statt Du",
+			"Keine KI-Bilder",
+		]);
+		await call("POST", "requests", {
+			siteId: "praxis",
+			sectionId: "hero",
+			text: "A",
+			pagePath: "/",
+		});
+		const got = await call<{ rules: { id: string; siteId: string }[] }>(
+			"GET",
+			"style/humansource",
+		);
+		expect(got.data.rules.map((r) => r.siteId)).toEqual(["alle", "alle"]);
+		expect((await store.listStyle("praxis")).map((r) => r.text)).toEqual([
+			"Sie statt Du",
+			"Keine KI-Bilder",
+		]);
+		await call("DELETE", `style/praxis/${got.data.rules[0].id}`);
+		const again = await call<{ rules: { text: string }[] }>(
+			"GET",
+			"style/praxis",
+		);
+		expect(again.data.rules.map((r) => r.text)).toEqual(["Keine KI-Bilder"]);
 	});
 
 	it("schaltet Regeln ab und löscht sie", async () => {

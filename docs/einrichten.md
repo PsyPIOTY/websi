@@ -1,15 +1,22 @@
 # WEBSI einrichten
 
-Einmalig am **MacBook**, etwa 20 Minuten, am besten zusammen mit Paco im
-Thread. Du meldest dich nur an und fügst einen Schlüssel ein. Den Rest macht
-[`scripts/einrichten-macbook.sh`](../scripts/einrichten-macbook.sh).
+Einmalig, zusammen mit Paco im Thread, etwa eine Stunde. Du meldest dich nur
+an und fügst einen Schlüssel ein. Den Rest machen
+[`scripts/einrichten-macbook.sh`](../scripts/einrichten-macbook.sh) und Paco.
+
+| Teil | Gerät | Dauer |
+| --- | --- | --- |
+| 1. Skript starten | MacBook | 20 Min. |
+| 2. WEBSI aufs iPhone | iPhone | 2 Min. |
+| 3. Vorschau verbinden | MacBook, Browser | 10 Min. |
+| 4. Helfer auf dem Mac mini | Mac mini | 15 Min. |
+| 5. Erster Wunsch | iPhone | 15 Min. |
 
 ## Vorher
 
-- Der WEBSI-Vorschlag mit diesem Skript ist gemergt.
-- Cloudflare verlangt beim ersten Einschalten von Zero Trust eine Zahlungsart,
-  auch für den Plan „Free“. Der kostet 0 €. Ohne Zero Trust gibt es keinen
-  Zugangsschutz, und WEBSI bleibt für alle gesperrt.
+Cloudflare verlangt beim ersten Einschalten von Zero Trust eine Zahlungsart,
+auch für den Plan „Free“. Der kostet 0 €. Ohne Zero Trust gibt es keinen
+Zugangsschutz, und WEBSI bleibt für alle gesperrt.
 
 ## 1. Skript starten (MacBook)
 
@@ -37,37 +44,69 @@ Geht etwas schief: Bildschirmfoto an Paco, dann dieselbe Zeile noch einmal.
 Das Skript erkennt, was schon fertig ist. Dieselbe Zeile bringt auch später
 eine neue WEBSI-Fassung online.
 
-## 2. iPhone
+## 2. WEBSI aufs iPhone
 
 In Safari die WEBSI-Adresse öffnen, anmelden, dann „Teilen“ und „Zum
 Home-Bildschirm“.
 
-## 3. Veröffentlichen (nach deiner Antwort zu E2)
+## 3. Vorschau verbinden (MacBook, Browser)
 
-Empfehlung: Cloudflare baut die Website selbst, sobald du einen Vorschlag
-mergst, und zeigt vorher eine Vorschau. Kein Terminal, keine GitHub-Minuten.
+Danach baut Cloudflare jeden Vorschlag als Vorschau-Link, ohne Terminal und
+ohne GitHub-Minuten. Cloudflare ist dabei nur die Werkstatt: Deine Websites
+bleiben bei All-Inkl.
 
 [Workers & Pages](https://dash.cloudflare.com/?to=/:account/workers-and-pages),
-dann konzeptstudio, „Settings“, „Builds“, „Connect“:
+dann konzeptstudio, „Settings“, „Build“, „Connect“:
 
 | Feld | Eintrag |
 | --- | --- |
 | Git repository | PsyPIOTY/psychologe-konzeptstudio |
 | Git branch | main |
 | Build command | `npm run build` |
-| Deploy command, Preview command | so lassen |
+| Deploy command | so lassen (`npx wrangler deploy`) |
+| Preview command | `npx wrangler versions upload` |
+| Branch control | Häkchen bei „Enable Preview Builds“ |
 
-Cloudflare baut erst beim nächsten Merge. Darum danach den
+Dann „Connect“. Cloudflare baut erst beim nächsten Merge. Darum danach den
 Konzeptstudio-Vorschlag mit der Praxisseite mergen; ab dann zeigt WEBSI die
 Praxisseite unter `/praxis`. Ist er schon gemergt, hat Paco einen kleinen
 Vorschlag für den ersten Bau bereit.
 
-Optional genauso für websi selbst (Repo PsyPIOTY/websi), sobald Paco die
-Datenbank aus dem Block „Für Paco“ eingetragen hat. Dann kommt jede neue
-WEBSI-Fassung nach deinem Merge-Klick von selbst online.
+Optional genauso für websi selbst (Repo PsyPIOTY/websi, ohne Häkchen bei
+„Enable Preview Builds“), sobald Paco die Datenbank aus dem Block „Für Paco“
+eingetragen hat. Dann kommt jede neue WEBSI-Fassung nach deinem Merge-Klick
+von selbst online.
 
-## 4. WEBSI-Worker (nach deiner Antwort zu E1)
+## 4. Helfer auf dem Mac mini
 
-Der Worker setzt deine Wünsche in Vorschläge um
-([`worker.md`](worker.md)). Empfehlung: auf dem Mac mini. Das richtet Paco
-über den Thread „Gesamttest und Urlaubsplan“ ein.
+Der Helfer setzt deine Wünsche in Vorschläge um ([`worker.md`](worker.md)):
+alle 10 Minuten, mit deinem Claude-Abo, ohne GitHub-Minuten. Paco richtet ihn
+über den Thread „Gesamttest und Urlaubsplan“ ein. Von dir braucht es dort nur
+die Anmeldung bei Claude und einen GitHub-Schlüssel wie in Teil 1.
+
+Im selben Schritt verbindet Paco WEBSI mit seinem Dashboard, damit Hinweise
+unter „Wartet auf dich“ erscheinen. Der Mac mini erzeugt dafür einen
+Zugangsschlüssel, legt ihn in seinem Schlüsselbund ab und gibt ihn WEBSI
+(`MCP_TOKEN`). Der Schlüssel verlässt den Mac mini nicht. Von dir braucht es
+einmal „Allow“ bei Cloudflare und in Zero Trust eine Ausnahme („Bypass“) für
+die Pfade `/api/websi/mcp` und `/api/websi/hinweise`. Paco sagt die Klicks an,
+das Token schützt die beiden Pfade.
+
+## 5. Erster Wunsch
+
+In WEBSI auf dem iPhone unter einem Abschnitt der Praxisseite einen kleinen
+Wunsch tippen, dann „Alle senden“. Nach etwa 10 Minuten steht der Vorschlag
+am Abschnitt: „Vorschau öffnen“, dann „Veröffentlichen“ oder „Verwerfen“.
+Ohne deinen Klick geht nichts online.
+
+Unter „Stil“ stehen deine Regeln für alle Seiten, zum Beispiel „Ansprache mit
+‚Sie‘“. Sie gehen mit jedem Wunsch mit. Dort kannst du sie ändern oder
+abschalten.
+
+## Später: Hinweise einschalten
+
+Erst wenn die Praxisseite bei All-Inkl online ist, nicht am Termin. Dann
+braucht es zwei Lese-Schlüssel (MacBook, etwa 15 Minuten, Paco führt dich):
+einen bei Cloudflare für die Besucherzahlen, einen bei Google für Search
+Console. Danach meldet sich WEBSI nur, wenn etwas zu tun ist: kaputter Link,
+Google-Platz deutlich gefallen oder viel weniger Besucher.

@@ -152,6 +152,20 @@ export const TOOLS: Tool[] = [
 		call: (a) => ({ method: "POST", path: `visibility/${enc(a.siteId)}/scan` }),
 	},
 	{
+		name: "websi_hinweise",
+		description:
+			"Offene Hinweise der Monatsprüfung: kaputte Links, bei Google deutlich gefallen, deutlich weniger Besucher. Leer, wenn nichts zu tun ist. Je Hinweis ein vorbereiteter Auftrag und ein Link, der ihn in WEBSI öffnet.",
+		inputSchema: obj({}),
+		call: () => ({ method: "GET", path: "hinweise" }),
+	},
+	{
+		name: "websi_pruefen",
+		description:
+			"Monatsprüfung sofort ausführen, z. B. als Test nach dem Online-Gang. Sonst läuft sie von selbst ab dem 4. jedes Monats.",
+		inputSchema: obj({}),
+		call: () => ({ method: "POST", path: "hinweise/pruefen" }),
+	},
+	{
 		name: "websi_usage",
 		description:
 			"Kontingent: Läufe je Modell heute und Actions-Minuten im Monat.",
