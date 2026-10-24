@@ -9,7 +9,7 @@ an und fügst einen Schlüssel ein. Den Rest machen
 | 1. Skript starten | MacBook | 20 Min. |
 | 2. WEBSI aufs iPhone | iPhone | 2 Min. |
 | 3. Vorschau verbinden | MacBook, Browser | 10 Min. |
-| 4. Helfer auf dem Mac mini | Mac mini | 10 Min. |
+| 4. Helfer auf dem Mac mini | Mac mini | 15 Min. |
 | 5. Erster Wunsch | iPhone | 15 Min. |
 
 ## Vorher
@@ -83,6 +83,14 @@ Der Helfer setzt deine Wünsche in Vorschläge um ([`worker.md`](worker.md)):
 alle 10 Minuten, mit deinem Claude-Abo, ohne GitHub-Minuten. Paco richtet ihn
 über den Thread „Gesamttest und Urlaubsplan“ ein. Von dir braucht es dort nur
 die Anmeldung bei Claude und einen GitHub-Schlüssel wie in Teil 1.
+
+Im selben Schritt verbindet Paco WEBSI mit seinem Dashboard, damit Hinweise
+unter „Wartet auf dich“ erscheinen. Der Mac mini erzeugt dafür einen
+Zugangsschlüssel, legt ihn in seinem Schlüsselbund ab und gibt ihn WEBSI
+(`MCP_TOKEN`). Der Schlüssel verlässt den Mac mini nicht. Von dir braucht es
+einmal „Allow“ bei Cloudflare und in Zero Trust eine Ausnahme („Bypass“) für
+die Pfade `/api/websi/mcp` und `/api/websi/hinweise`. Paco sagt die Klicks an,
+das Token schützt die beiden Pfade.
 
 ## 5. Erster Wunsch
 
