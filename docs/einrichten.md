@@ -12,6 +12,10 @@ an und fügst einen Schlüssel ein. Den Rest machen
 | 4. Helfer auf dem Mac mini | Mac mini | 15 Min. |
 | 5. Erster Wunsch | iPhone | 15 Min. |
 
+Reicht die Zeit am Termin nicht, ist nach Teil 3 ein guter Halt: WEBSI läuft
+dann auf dem iPhone und sammelt deine Wünsche. Teil 4 und 5 kommen in einen
+zweiten, kurzen Termin; erst dann setzt der Helfer die Wünsche um.
+
 ## Vorher
 
 Cloudflare verlangt beim ersten Einschalten von Zero Trust eine Zahlungsart,
