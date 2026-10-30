@@ -9,7 +9,7 @@ an und fügst einen Schlüssel ein. Den Rest machen
 | 1. Skript starten | MacBook | 20 Min. |
 | 2. WEBSI aufs iPhone | iPhone | 2 Min. |
 | 3. Vorschau verbinden | MacBook, Browser | 10 Min. |
-| 4. Helfer auf dem Mac mini | Mac mini | 15 Min. |
+| 4. Helfer auf dem Mac mini | Mac mini | 10 Min. |
 | 5. Erster Wunsch | iPhone | 15 Min. |
 
 Reicht die Zeit am Termin nicht, ist nach Teil 3 ein guter Halt: WEBSI läuft
@@ -89,15 +89,8 @@ von selbst online.
 Der Helfer setzt deine Wünsche in Vorschläge um ([`worker.md`](worker.md)):
 alle 10 Minuten, mit deinem Claude-Abo, ohne GitHub-Minuten. Paco richtet ihn
 über den Thread „Gesamttest und Urlaubsplan“ ein. Von dir braucht es dort nur
-die Anmeldung bei Claude und einen GitHub-Schlüssel wie in Teil 1.
-
-Im selben Schritt verbindet Paco WEBSI mit seinem Dashboard, damit Hinweise
-unter „Wartet auf dich“ erscheinen. Der Mac mini erzeugt dafür einen
-Zugangsschlüssel, legt ihn in seinem Schlüsselbund ab und gibt ihn WEBSI
-(`MCP_TOKEN`). Der Schlüssel verlässt den Mac mini nicht. Von dir braucht es
-einmal „Allow“ bei Cloudflare und in Zero Trust eine Ausnahme („Bypass“) für
-die Pfade `/api/websi/mcp` und `/api/websi/hinweise`. Paco sagt die Klicks an,
-das Token schützt die beiden Pfade.
+die Anmeldung bei Claude und auf GitHub eine Ergänzung: Der Schlüssel des Mac
+mini (PACO-GitHub) bekommt zusätzlich psychologe-konzeptstudio.
 
 ## 5. Erster Wunsch
 
@@ -112,8 +105,17 @@ abschalten.
 
 ## Später: Hinweise einschalten
 
-Erst wenn die Praxisseite bei All-Inkl online ist, nicht am Termin. Dann
-braucht es zwei Lese-Schlüssel (MacBook, etwa 15 Minuten, Paco führt dich):
-einen bei Cloudflare für die Besucherzahlen, einen bei Google für Search
-Console. Danach meldet sich WEBSI nur, wenn etwas zu tun ist: kaputter Link,
-Google-Platz deutlich gefallen oder viel weniger Besucher.
+Erst wenn die Praxisseite bei All-Inkl online ist, nicht am Termin. Vorher
+gibt es nichts zu melden. Dann braucht es zwei Lese-Schlüssel (MacBook, etwa
+15 Minuten, Paco führt dich): einen bei Cloudflare für die Besucherzahlen,
+einen bei Google für Search Console. Danach meldet sich WEBSI nur, wenn etwas
+zu tun ist: kaputter Link, Google-Platz deutlich gefallen oder viel weniger
+Besucher.
+
+Im selben Schritt verbindet Paco WEBSI mit seinem Dashboard, damit diese
+Hinweise unter „Wartet auf dich“ erscheinen. Der Mac mini erzeugt dafür einen
+Zugangsschlüssel, legt ihn in seinem Schlüsselbund ab und gibt ihn WEBSI
+(`MCP_TOKEN`). Der Schlüssel verlässt den Mac mini nicht. Von dir braucht es
+einmal „Allow“ bei Cloudflare und in Zero Trust eine Ausnahme („Bypass“) für
+die Pfade `/api/websi/mcp` und `/api/websi/hinweise`. Paco sagt die Klicks an,
+das Token schützt die beiden Pfade.
