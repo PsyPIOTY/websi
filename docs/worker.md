@@ -60,9 +60,13 @@ node pfad/zu/websi-worker.ts --poll --every 10 --only ollama  # nur lokale Auftr
 
 **Ohne Token (empfohlen): Cloudflare Workers Builds.** Einmal im
 Cloudflare-Dashboard das Repo der Website verbinden: Workers & Pages → die
-Website → Settings → Build → „Connect“ (GitHub-Repo wählen), Preview command
-`npx wrangler versions upload` und unter „Branch control“ „Enable Preview
-Builds“ einschalten ([`einrichten.md`](einrichten.md), Teil 3). Danach baut
+Website → Settings → Build → „Connect“ (GitHub-Repo wählen), den
+vorgeschlagenen Preview command stehen lassen und unter „Branch control“
+„Enable Preview Builds“ einschalten ([`einrichten.md`](einrichten.md), Teil 3).
+Neue Verbindungen nutzen seit September 2026 Worker Previews
+(`npx wrangler preview`). Das braucht im Repo der Website Wrangler ab 4.135
+und einen `previews`-Block in `wrangler.jsonc`; das Konzeptstudio hat beides.
+Der ältere Weg (`npx wrangler versions upload`) geht genauso. Danach baut
 Cloudflare jeden Vorschlags-Branch selbst und meldet die Vorschau-Adresse als
 Prüfung am Commit bzw. als Kommentar am Pull Request. WEBSI liest sie dort aus (nur Adressen
 derselben Website, `…-<worker>.<konto>.workers.dev`). Kein Token, keine

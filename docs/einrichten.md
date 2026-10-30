@@ -68,8 +68,11 @@ dann konzeptstudio, „Settings“, „Build“, „Connect“:
 | Git branch | main |
 | Build command | `npm run build` |
 | Deploy command | so lassen (`npx wrangler deploy`) |
-| Preview command | `npx wrangler versions upload` |
+| Preview command | so lassen (Cloudflare trägt es selbst ein) |
 | Branch control | Häkchen bei „Enable Preview Builds“ |
+
+Fragt Cloudflare nach eigenen Einstellungen für Vorschauen (Variablen,
+Bindungen): nichts eintragen, bestätigen.
 
 Dann „Connect“. Cloudflare baut erst beim nächsten Merge. Darum danach den
 Konzeptstudio-Vorschlag mit der Praxisseite mergen; ab dann zeigt WEBSI die
