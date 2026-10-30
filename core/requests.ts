@@ -69,6 +69,7 @@ export function createRequest(
 	input: NewRequestInput,
 	id: string,
 	now: string,
+	by = "peter",
 ): ChangeRequest {
 	return {
 		id,
@@ -76,7 +77,7 @@ export function createRequest(
 		status: "offen",
 		createdAt: now,
 		updatedAt: now,
-		events: [{ at: now, kind: "erstellt", text: input.text, by: "peter" }],
+		events: [{ at: now, kind: "erstellt", text: input.text, by }],
 	};
 }
 

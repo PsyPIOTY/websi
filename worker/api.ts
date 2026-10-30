@@ -28,6 +28,7 @@ import {
 	WHOLE_PAGE,
 } from "../core/types";
 import { DEFAULT_LIMITS, type Limits, summarizeUsage } from "../core/usage";
+import { monitorState, openNotices } from "./monitor";
 import type { Store } from "./storage";
 
 export interface ApiDeps {
@@ -37,6 +38,10 @@ export interface ApiDeps {
 	now?: () => Date;
 	uuid?: () => string;
 	scan: (site: SiteProfile) => Promise<VisibilityReport>;
+	/** Stil-Regeln für alle Websites, die WEBSI beim ersten Start einmal anlegt. */
+	startStyle?: string[];
+	/** Monatsprüfung sofort ausführen (sonst täglich per Cron). */
+	runMonitor?: () => Promise<unknown>;
 }
 
 const json = (data: unknown, status = 200) =>
@@ -75,7 +80,17 @@ export function createApi(deps: ApiDeps) {
 	const engineOf = (r: ChangeRequest): EngineId =>
 		r.engine ?? site(r.siteId)?.agent.engine ?? DEFAULT_ENGINE;
 
+	/** Legt die Start-Regeln einmal an. Was Peter löscht, bleibt gelöscht. */
+	async function seedStyle() {
+		if (!deps.startStyle?.length) return;
+		if (await deps.store.getSetting("stil-start")) return;
+		for (const text of deps.startStyle)
+			await remember(ALL_SITES, text, "peter");
+		await deps.store.putSetting("stil-start", now());
+	}
+
 	async function styleFor(siteId: string) {
+		await seedStyle();
 		return (await deps.store.listStyle(siteId))
 			.filter((x) => x.active)
 			.map((x) => x.text);
@@ -405,6 +420,7 @@ export function createApi(deps: ApiDeps) {
 			if (parts[0] === "style" && parts.length === 2) {
 				const s = site(parts[1]);
 				if (!s) return fail("Website unbekannt", 404);
+				await seedStyle();
 				if (method === "GET") {
 					const rules = await deps.store.listStyle(s.id);
 					// Vorschläge: Nachbesserungen und Gründe fürs Verwerfen, die noch keine Regel sind.
@@ -513,6 +529,25 @@ export function createApi(deps: ApiDeps) {
 				const report = await deps.scan(s);
 				await deps.store.saveReport(report);
 				return json(report);
+			}
+
+			// Monatsprüfung: offene Hinweise, je mit vorbereitetem Auftrag und Link zum Öffnen.
+			if (parts[0] === "hinweise" && parts.length === 1 && method === "GET") {
+				const hinweise = (await openNotices(deps.store)).map((n) => ({
+					...n,
+					site: site(n.siteId)?.name ?? n.siteId,
+					link: `${url.origin}/#site=${n.siteId}&tab=auftraege&auftrag=${n.requestId}`,
+				}));
+				return json({ hinweise, pruefung: await monitorState(deps.store) });
+			}
+
+			if (
+				parts[0] === "hinweise" &&
+				parts[1] === "pruefen" &&
+				method === "POST"
+			) {
+				if (!deps.runMonitor) return fail("Monatsprüfung fehlt", 501);
+				return json(await deps.runMonitor());
 			}
 
 			if (

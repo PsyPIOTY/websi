@@ -1,12 +1,13 @@
-import { siteProfiles } from "../sites";
+import { siteProfiles, startStyle } from "../sites";
 import { type AccessEnv, isAllowed } from "./access";
 import { createApi } from "./api";
 import { handleMcp } from "./mcp";
+import { type MonitorEnv, runMonitor } from "./monitor";
 import { belongsToPreview, proxyRequest } from "./proxy";
 import { D1Store } from "./storage";
 import { scanSite } from "./visibility";
 
-interface Env extends AccessEnv {
+interface Env extends AccessEnv, MonitorEnv {
 	DB: D1Database;
 	ASSETS: Fetcher;
 	GITHUB_TOKEN?: string;
@@ -16,6 +17,17 @@ interface Env extends AccessEnv {
 }
 
 const MCP_PATH = "/api/websi/mcp";
+/** Nur lesend, für Pacos Dashboard: dieselben Hinweise wie websi_hinweise. */
+const NOTICES_PATH = "/api/websi/hinweise";
+
+/** Pfade, die ein Client mit MCP_TOKEN statt Access-Anmeldung erreicht. */
+export function tokenPath(request: Request) {
+	const { pathname } = new URL(request.url);
+	return (
+		pathname === MCP_PATH ||
+		(pathname === NOTICES_PATH && request.method === "GET")
+	);
+}
 
 /** Vergleich in konstanter Zeit, damit das Token nicht erraten werden kann. */
 function sameToken(a: string, b: string) {
@@ -34,22 +46,40 @@ export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		const isMcp = new URL(request.url).pathname === MCP_PATH;
 		if (
-			!((isMcp && mcpAllowed(request, env)) || (await isAllowed(request, env)))
+			!(
+				(tokenPath(request) && mcpAllowed(request, env)) ||
+				(await isAllowed(request, env))
+			)
 		)
 			return new Response("Kein Zugang", { status: 403 });
 
 		if (belongsToPreview(request)) return proxyRequest(request, siteProfiles);
 
+		const store = new D1Store(env.DB);
 		const api = createApi({
-			store: new D1Store(env.DB),
+			store,
 			sites: siteProfiles,
 			env,
 			scan: (site) => scanSite(site),
+			startStyle,
+			runMonitor: () => runMonitor({ store, sites: siteProfiles, env }, true),
 		});
 		if (isMcp) return handleMcp(request, api.handle);
 		const response = await api.handle(request);
 		if (response) return response;
 
 		return env.ASSETS.fetch(request);
+	},
+
+	// Täglich: Aufrufe zählen, ab dem 4. einmal im Monat prüfen (wrangler.jsonc, „triggers“).
+	async scheduled(controller, env, ctx) {
+		ctx.waitUntil(
+			runMonitor({
+				store: new D1Store(env.DB),
+				sites: siteProfiles,
+				env,
+				now: new Date(controller.scheduledTime),
+			}),
+		);
 	},
 } satisfies ExportedHandler<Env>;

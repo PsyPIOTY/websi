@@ -18,8 +18,9 @@ der Website bekommen. WEBSI legt Live-Fassung und Vorschlag übereinander; ein
 Schieber zeigt den Unterschied, beide scrollen gemeinsam. „Veröffentlichen“
 führt den Vorschlag zusammen; ohne diesen Klick geht nichts live.
 
-**Stil-Gedächtnis.** Regeln wie „Du statt Sie“ gehen mit jedem Auftrag mit, für
-eine Website oder für alle. WEBSI schlägt Regeln aus Nachbesserungen und
+**Stil-Gedächtnis.** Regeln wie „Ansprache mit ‚Sie‘“ gehen mit jedem Auftrag
+mit, für eine Website oder für alle. WEBSI startet mit Peters Regeln
+(`startStyle` in `sites/index.ts`) und schlägt weitere aus Nachbesserungen und
 Verwerf-Gründen vor.
 
 **Kontingent.** Oben rechts: Läufe je KI heute und in den letzten 5 Stunden,
@@ -31,6 +32,11 @@ der Suchbegriffe, alle Prüfungen nach Technik, Inhalte, Lokal und KI-Suche,
 Stand der Verzeichniseinträge (Google-Profil, Bing, therapie.de …).
 
 **Aufträge.** Alle Wünsche der aktiven Website mit Filter nach Status.
+
+**Hinweise.** Einmal im Monat prüft WEBSI jede Website, die online ist:
+kaputte Links, Google-Platz, Besucher. Es meldet sich nur, wenn etwas zu tun
+ist, und legt dann einen fertigen Auftrag an. Paco kann ihn unter „Wartet auf
+dich“ zeigen ([`docs/schnittstellen.md`](docs/schnittstellen.md#monatsprüfung-hinweise)).
 
 **MCP-Brücke.** Paco, das KI-Betriebssystem oder ein Claude-Client sprechen
 WEBSI über MCP an (`/api/websi/mcp`). Siehe [`docs/schnittstellen.md`](docs/schnittstellen.md).

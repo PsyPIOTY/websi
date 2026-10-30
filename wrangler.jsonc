@@ -19,5 +19,9 @@
 	],
 	"vars": {
 		"AGENT_MODE": "auto"
+	},
+	// Monatsprüfung: täglich 05:00 UTC Aufrufe zählen, ab dem 4. einmal prüfen.
+	"triggers": {
+		"crons": ["0 5 * * *"]
 	}
 }

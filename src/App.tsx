@@ -15,12 +15,13 @@ import { store } from "./local";
 export type Tab = "editor" | "sichtbarkeit" | "auftraege" | "stil";
 const TABS: Tab[] = ["editor", "sichtbarkeit", "auftraege", "stil"];
 
-function readHash(): { site?: string; tab?: Tab } {
+function readHash(): { site?: string; tab?: Tab; auftrag?: string } {
 	const params = new URLSearchParams(location.hash.slice(1));
 	const tab = params.get("tab");
 	return {
 		site: params.get("site") ?? undefined,
 		tab: TABS.includes(tab as Tab) ? (tab as Tab) : undefined,
+		auftrag: params.get("auftrag") ?? undefined,
 	};
 }
 
@@ -35,6 +36,8 @@ export function App() {
 	const [data, setData] = useState<SiteData | null>(null);
 	const [loadError, setLoadError] = useState<string | null>(null);
 	const [openId, setOpenId] = useState<string | null>(null);
+	// Link aus einem Hinweis (#…&auftrag=…): öffnen, sobald die Website geladen ist.
+	const [pendingId, setPendingId] = useState(initial.auftrag ?? null);
 	const [compareId, setCompareId] = useState<string | null>(null);
 	const [usage, setUsage] = useState<UsageSummary | null>(null);
 	const [engine, setEngineState] = useState<EngineId>(() => {
@@ -85,10 +88,18 @@ export function App() {
 	}, [siteId, reload]);
 
 	useEffect(() => {
+		if (pendingId && data?.requests.some((r) => r.id === pendingId)) {
+			setOpenId(pendingId);
+			setPendingId(null);
+		}
+	}, [data, pendingId]);
+
+	useEffect(() => {
 		const onHash = () => {
 			const next = readHash();
 			if (next.site) setSiteId(next.site);
 			if (next.tab) setTab(next.tab);
+			if (next.auftrag) setPendingId(next.auftrag);
 		};
 		window.addEventListener("hashchange", onHash);
 		return () => window.removeEventListener("hashchange", onHash);
