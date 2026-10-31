@@ -70,15 +70,26 @@ export const api = {
 		pin?: Pin;
 		engine?: EngineId;
 		send?: boolean;
+		drafts?: string[];
 	}) =>
 		call<ChangeRequest>("requests", {
 			method: "POST",
 			body: JSON.stringify(input),
 		}),
-	sendBatch: (siteId: string, engine: EngineId, requestIds?: string[]) =>
+	sendBatch: (
+		siteId: string,
+		engine: EngineId,
+		requestIds?: string[],
+		drafts?: string[],
+	) =>
 		call<ChangeRequest[]>("batches", {
 			method: "POST",
-			body: JSON.stringify({ siteId, engine, requestIds }),
+			body: JSON.stringify({ siteId, engine, requestIds, drafts }),
+		}),
+	choose: (id: string, branch: string) =>
+		call<ActionResult>(`requests/${id}/choose`, {
+			method: "POST",
+			body: JSON.stringify({ branch }),
 		}),
 	action: (
 		id: string,

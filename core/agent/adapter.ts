@@ -1,3 +1,4 @@
+import type { Draft } from "../drafts";
 import { ENGINES, type EngineId } from "../engines";
 import type {
 	ChangeRequest,
@@ -14,6 +15,8 @@ export interface AgentUpdate {
 	proposalUrl?: string;
 	previewUrl?: string;
 	branch?: string;
+	/** Mehrere Entwürfe zur Auswahl (noch keiner gewählt). */
+	drafts?: Draft[];
 }
 
 export interface DispatchResult {
@@ -45,6 +48,8 @@ export interface Job {
 	engine: EngineId;
 	/** Aktive Regeln aus Peters Stil-Gedächtnis. */
 	style: string[];
+	/** Richtungen für mehrere Entwürfe zur Auswahl; leer = ein Vorschlag. */
+	drafts?: string[];
 }
 
 /**
@@ -68,6 +73,12 @@ export interface AgentAdapter {
 	publish(request: ChangeRequest, ctx: AgentContext): Promise<{ url: string }>;
 	/** Vorschlag verwerfen (Issue schließen o. Ä.). */
 	discard(request: ChangeRequest, ctx: AgentContext): Promise<void>;
+	/** Einen von mehreren Entwürfen nehmen, die anderen verwerfen. */
+	choose(
+		request: ChangeRequest,
+		ctx: AgentContext,
+		draft: Draft,
+	): Promise<void>;
 }
 
 /** Steuerdaten, die der Worker aus dem Auftrag liest. */
@@ -77,6 +88,7 @@ export function jobMeta(job: Job) {
 		engine: job.engine,
 		requestIds: job.items.map((i) => i.request.id),
 		sections: [...new Set(job.items.map((i) => i.section.id))],
+		...(job.drafts?.length ? { drafts: job.drafts } : {}),
 	};
 }
 
@@ -137,6 +149,10 @@ export function briefing(job: Job) {
 	lines.push("");
 	if (site.notes) lines.push(`- Hinweis zur Website: ${site.notes}`);
 	if (engine) lines.push(`- Modell: ${engine.label} (${engine.account})`);
+	if (job.drafts?.length)
+		lines.push(
+			`- ${job.drafts.length} Entwürfe zur Auswahl: ${job.drafts.join(", ")}. Je Richtung ein eigener Vorschlag, Peter wählt einen.`,
+		);
 	if (job.style.length) {
 		lines.push("", "**Peters Stil**", ...job.style.map((s) => `- ${s}`));
 	}

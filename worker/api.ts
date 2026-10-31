@@ -5,6 +5,7 @@ import {
 	listAdapters,
 	resolveAdapter,
 } from "../core/agent/registry";
+import { normalizeDrafts } from "../core/drafts";
 import {
 	DEFAULT_ENGINE,
 	ENGINES,
@@ -105,7 +106,11 @@ export function createApi(deps: ApiDeps) {
 	}
 
 	/** Schickt einen oder mehrere Wünsche als einen Auftrag los. */
-	async function send(requests: ChangeRequest[], engine?: EngineId) {
+	async function send(
+		requests: ChangeRequest[],
+		engine?: EngineId,
+		drafts: string[] = [],
+	) {
 		const first = requests[0];
 		const s = site(first.siteId);
 		if (!s) throw new RequestError("Website unbekannt");
@@ -119,6 +124,7 @@ export function createApi(deps: ApiDeps) {
 			items,
 			engine: chosen,
 			style: await styleFor(s.id),
+			...(drafts.length ? { drafts } : {}),
 		};
 		const adapter = adapterFor(first);
 		const batch = requests.length > 1;
@@ -133,12 +139,14 @@ export function createApi(deps: ApiDeps) {
 							? "An den Testmodus gegeben"
 							: `An ${adapter.label} gegeben`) +
 						` · ${ENGINES.find((e) => e.id === chosen)?.label}` +
-						(batch ? ` · Sammelauftrag mit ${requests.length} Wünschen` : ""),
+						(batch ? ` · Sammelauftrag mit ${requests.length} Wünschen` : "") +
+						(drafts.length ? ` · ${drafts.length} Entwürfe` : ""),
 					by: adapter.id,
 					url: result.url || undefined,
 				});
 				next.external = { adapter: adapter.id, id: result.id, url: result.url };
 				next.batchId = batchId;
+				next.drafts = drafts.length ? drafts : undefined;
 				return next;
 			});
 		} catch (e) {
@@ -174,12 +182,19 @@ export function createApi(deps: ApiDeps) {
 		if (update.status === "vorschlag" && next.status === "in_arbeit") {
 			next = withStatus(next, "vorschlag", now(), {
 				kind: "vorschlag",
-				text: "Vorschlag liegt bereit",
+				text: update.drafts?.length
+					? `${update.drafts.length} Entwürfe liegen bereit`
+					: "Vorschlag liegt bereit",
 				by: r.external.adapter,
 				url: update.proposalUrl,
 			});
 		}
-		if (update.proposalUrl || update.branch || update.previewUrl) {
+		if (
+			update.proposalUrl ||
+			update.branch ||
+			update.previewUrl ||
+			update.drafts
+		) {
 			next = {
 				...next,
 				external: {
@@ -187,6 +202,7 @@ export function createApi(deps: ApiDeps) {
 					proposalUrl: update.proposalUrl ?? r.external.proposalUrl,
 					previewUrl: update.previewUrl ?? r.external.previewUrl,
 					branch: update.branch ?? r.external.branch,
+					drafts: update.drafts ?? r.external.drafts,
 				},
 			};
 		}
@@ -209,6 +225,10 @@ export function createApi(deps: ApiDeps) {
 	}
 
 	/** Antwort einer Aktion: der Auftrag selbst plus alle mitgeänderten. */
+	/** Mehrere Entwürfe liegen bereit, Peter hat noch keinen gewählt. */
+	const pickPending = (r: ChangeRequest) =>
+		Boolean(r.external?.drafts?.length && !r.external.chosen);
+
 	const withRelated = (list: ChangeRequest[], status = 200) =>
 		json({ ...list[0], related: list.slice(1) }, status);
 
@@ -312,7 +332,8 @@ export function createApi(deps: ApiDeps) {
 						return fail("Abschnitt unbekannt", 404);
 					}
 					let r = createRequest(input, uuid(), now());
-					if (raw.send !== false) [r] = await send([r]);
+					if (raw.send !== false)
+						[r] = await send([r], undefined, normalizeDrafts(raw.drafts));
 					await deps.store.putRequest(r);
 					return json(r, 201);
 				}
@@ -327,9 +348,44 @@ export function createApi(deps: ApiDeps) {
 					if (r.status !== "offen")
 						return fail("Auftrag ist schon unterwegs", 409);
 					const raw = await body();
-					list = await send([r], isEngine(raw.engine) ? raw.engine : undefined);
+					list = await send(
+						[r],
+						isEngine(raw.engine) ? raw.engine : undefined,
+						normalizeDrafts(raw.drafts),
+					);
+				} else if (action === "choose") {
+					const raw = await body();
+					const draft = r.external?.drafts?.find(
+						(d) => d.branch === raw.branch,
+					);
+					if (!r.external || r.external.chosen || !draft)
+						return fail("Entwurf unbekannt", 409);
+					const ext = r.external;
+					await adapterFor(r).choose(r, context(r), draft);
+					list = (await group(r)).map((x) => {
+						const next = addEvent(x, now(), {
+							kind: "status",
+							text: `Entwurf „${draft.name}“ gewählt`,
+							by: "peter",
+							url: draft.proposalUrl,
+						});
+						next.external = {
+							...(x.external ?? ext),
+							chosen: draft.branch,
+							branch: draft.branch,
+							proposalUrl: draft.proposalUrl,
+							previewUrl: draft.previewUrl,
+							drafts: undefined,
+						};
+						return next;
+					});
 				} else if (action === "sync") {
 					list = await sync(r);
+				} else if (
+					pickPending(r) &&
+					(action === "followup" || action === "publish")
+				) {
+					return fail("Erst einen Entwurf wählen", 409);
 				} else if (action === "followup") {
 					const raw = await body();
 					const text = String(raw.text ?? "").trim();
@@ -412,6 +468,7 @@ export function createApi(deps: ApiDeps) {
 				const list = await send(
 					ordered,
 					isEngine(raw.engine) ? raw.engine : undefined,
+					normalizeDrafts(raw.drafts),
 				);
 				await saveAll(list);
 				return json(list, 201);

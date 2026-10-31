@@ -36,10 +36,11 @@ Alle Pfade unter `/api/websi/`, Antworten als JSON.
 | GET | `sites/:id` | Profil, Aufträge, letzter Bericht, Verzeichnisse einer Website |
 | GET | `requests?site=:id` | Aufträge |
 | POST | `requests` | Neuer Wunsch `{ siteId, sectionId, text, pagePath, pin?, engine?, send? }` |
-| POST | `batches` | Sammelauftrag: alle gesammelten Wünsche einer Website `{ siteId, engine?, requestIds? }` |
+| POST | `batches` | Sammelauftrag: alle gesammelten Wünsche einer Website `{ siteId, engine?, requestIds?, drafts? }` (`drafts`: 2–3 Richtungen für Entwürfe zur Auswahl) |
 | POST | `requests/:id/send` | Gesammelten Wunsch einzeln losschicken `{ engine? }` |
 | POST | `requests/:id/sync` | Stand beim Ausführer abfragen |
-| POST | `requests/:id/followup` | Nachbessern `{ text, remember? }` |
+| POST | `requests/:id/choose` | Einen von mehreren Entwürfen nehmen `{ branch }`; die anderen werden verworfen |
+| POST | `requests/:id/followup` | Nachbessern `{ text, remember? }` (gesperrt, solange Entwürfe auf die Wahl warten) |
 | POST | `requests/:id/publish` | Vorschlag veröffentlichen (nur Peter) |
 | POST | `requests/:id/discard` | Verwerfen `{ reason?, remember? }` |
 | POST | `requests/:id/reopen` | Verworfenen Auftrag wieder öffnen |

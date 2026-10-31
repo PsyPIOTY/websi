@@ -388,7 +388,12 @@
 			const bar = bars.get(msg.sectionId);
 			const def = compareSections.find((d) => d.id === msg.sectionId);
 			const el = bar?.el || (def && safeQuery(def.selector));
-			if (el) el.scrollIntoView({ behavior: msg.smooth === false ? "instant" : "smooth", block: "start" });
+			// Nur im eigenen Fenster scrollen: scrollIntoView würde auch die Seite drumherum verschieben.
+			if (el)
+				window.scrollTo({
+					top: el.getBoundingClientRect().top + window.scrollY,
+					behavior: msg.smooth === false ? "instant" : "smooth",
+				});
 		}
 	});
 

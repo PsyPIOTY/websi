@@ -214,3 +214,63 @@ describe("Kontingent", () => {
 		expect(usage.data.github.free).toBe(2000);
 	});
 });
+
+describe("Drei Entwürfe zur Auswahl", () => {
+	it("liefert Entwürfe, sperrt Nachbessern bis zur Wahl und zählt jeden Entwurf", async () => {
+		const { call, collect } = setup();
+		await collect("hero", "Ruhiger");
+		await collect("faq", "Kürzer");
+		const sent = await call<ChangeRequest[]>("POST", "batches", {
+			siteId: "praxis",
+			drafts: ["knapp", "ausführlich", "mutig", "knapp"],
+		});
+		expect(sent.data[0].drafts).toEqual(["knapp", "ausführlich", "mutig"]);
+		expect(sent.data[0].events.at(-1)?.text).toContain("3 Entwürfe");
+
+		const id = sent.data[0].id;
+		const synced = await call("POST", `requests/${id}/sync`);
+		expect(synced.data.status).toBe("vorschlag");
+		const drafts = synced.data.external?.drafts ?? [];
+		expect(drafts.map((d) => d.name)).toEqual([
+			"knapp",
+			"ausführlich",
+			"mutig",
+		]);
+		expect(synced.data.related[0].external?.drafts).toHaveLength(3);
+
+		expect(
+			(await call("POST", `requests/${id}/followup`, { text: "x" })).status,
+		).toBe(409);
+		expect((await call("POST", `requests/${id}/publish`)).status).toBe(409);
+		expect(
+			(await call("POST", `requests/${id}/choose`, { branch: "gibt-es-nicht" }))
+				.status,
+		).toBe(409);
+
+		const chosen = await call("POST", `requests/${id}/choose`, {
+			branch: drafts[2].branch,
+		});
+		expect(chosen.status).toBe(200);
+		expect(chosen.data.external?.chosen).toBe(drafts[2].branch);
+		expect(chosen.data.external?.drafts).toBeUndefined();
+		expect(chosen.data.related[0].external?.chosen).toBe(drafts[2].branch);
+		expect(chosen.data.events.at(-1)?.text).toBe("Entwurf „mutig“ gewählt");
+
+		const usage = await call<UsageSummary>("GET", "usage");
+		expect(usage.data.engines.find((e) => e.id === "claude")?.today).toBe(3);
+
+		expect((await call("POST", `requests/${id}/publish`)).status).toBe(200);
+	});
+
+	it("bleibt bei einer einzigen Richtung ein normaler Vorschlag", async () => {
+		const { call, collect } = setup();
+		const r = (await collect("hero", "Ruhiger")).data;
+		const sent = await call("POST", `requests/${r.id}/send`, {
+			drafts: ["knapp"],
+		});
+		expect(sent.data.drafts).toBeUndefined();
+		const synced = await call("POST", `requests/${r.id}/sync`);
+		expect(synced.data.external?.drafts).toBeUndefined();
+		expect(synced.data.external?.previewUrl).toBeTruthy();
+	});
+});

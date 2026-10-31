@@ -64,6 +64,20 @@ node pfad/zu/websi-worker.ts --issue 12          # ein Auftrag
 node pfad/zu/websi-worker.ts --poll --every 10 --only ollama  # nur lokale Aufträge
 ```
 
+## Mehrere Entwürfe zur Auswahl
+
+Schaltet Peter im Editor „3 Entwürfe“ ein, stehen die Richtungen in den
+Steuerdaten (`"drafts":["knapp","ausführlich","mutig"]`, zwei bis drei, im
+Reiter „Stil“ umbenennbar). Der Worker baut je Richtung einen eigenen Branch
+`websi/issue-<Nr>-entwurf-<richtung>` mit eigenem Pull Request und meldet alle
+in einem Kommentar (`"drafts":[{name,branch,url,preview}]`, `"runs":3`).
+Cloudflare baut jeden Branch als eigene Vorschau.
+
+WEBSI zeigt die Entwürfe nebeneinander (am Handy zum Wischen). „Diese nehmen“
+schließt die anderen Pull Requests und löscht ihre Branches; danach laufen
+Nachbessern und Veröffentlichen wie bei einem einzelnen Vorschlag. Vor der
+Wahl sind beide gesperrt. Jede Richtung zählt im Kontingent als ein Lauf.
+
 ## Vorschau-Link
 
 **Ohne Token (empfohlen): Cloudflare Workers Builds.** Einmal im
