@@ -1660,3 +1660,39 @@ fieldset.filters {
 		justify-content: flex-start;
 	}
 }
+
+.usage__cf {
+	display: grid;
+	gap: 4px;
+	margin-top: 6px;
+}
+
+.usage__safety {
+	margin-top: 12px;
+}
+
+.usage__safety summary {
+	cursor: pointer;
+	font-weight: 600;
+	font-size: 14px;
+}
+
+.usage__safety ul {
+	margin: 8px 0 0;
+	padding-left: 18px;
+	display: grid;
+	gap: 6px;
+}
+
+@media (max-width: 700px) {
+	/* Am Handy über die ganze Breite, sonst ragt das Fenster links hinaus. */
+	.usage__panel {
+		position: fixed;
+		left: 16px;
+		right: 16px;
+		top: calc(var(--topbar) + 8px);
+		width: auto;
+		max-height: calc(100dvh - var(--topbar) - 24px);
+		overflow-y: auto;
+	}
+}

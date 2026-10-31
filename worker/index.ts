@@ -1,6 +1,7 @@
 import { siteProfiles, startStyle } from "../sites";
 import { type AccessEnv, isAllowed } from "./access";
 import { createApi } from "./api";
+import { cloudflareUsage } from "./costs";
 import { handleMcp } from "./mcp";
 import { type MonitorEnv, runMonitor } from "./monitor";
 import { belongsToPreview, proxyRequest } from "./proxy";
@@ -63,6 +64,7 @@ export default {
 			scan: (site) => scanSite(site),
 			startStyle,
 			runMonitor: () => runMonitor({ store, sites: siteProfiles, env }, true),
+			cloudflare: (refresh) => cloudflareUsage({ store, env }, refresh),
 		});
 		if (isMcp) return handleMcp(request, api.handle);
 		const response = await api.handle(request);

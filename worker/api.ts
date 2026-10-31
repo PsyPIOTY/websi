@@ -28,7 +28,15 @@ import {
 	type VisibilityReport,
 	WHOLE_PAGE,
 } from "../core/types";
-import { DEFAULT_LIMITS, type Limits, summarizeUsage } from "../core/usage";
+import {
+	type CloudflareUsage,
+	cloudflareRows,
+	costStop,
+	DEFAULT_LIMITS,
+	type Limits,
+	summarizeUsage,
+	type UsageSummary,
+} from "../core/usage";
 import { monitorState, openNotices } from "./monitor";
 import type { Store } from "./storage";
 
@@ -43,6 +51,12 @@ export interface ApiDeps {
 	startStyle?: string[];
 	/** Monatsprüfung sofort ausführen (sonst täglich per Cron). */
 	runMonitor?: () => Promise<unknown>;
+	/** Cloudflare-Verbrauch heute; refresh false = nur Zwischenspeicher. */
+	cloudflare?: (
+		refresh: boolean,
+	) => Promise<
+		{ at: string; data: CloudflareUsage } | { error: string } | null
+	>;
 }
 
 const json = (data: unknown, status = 200) =>
@@ -95,6 +109,28 @@ export function createApi(deps: ApiDeps) {
 		return (await deps.store.listStyle(siteId))
 			.filter((x) => x.active)
 			.map((x) => x.text);
+	}
+
+	async function usageSummary(refresh: boolean): Promise<UsageSummary> {
+		const limits =
+			(await deps.store.getSetting<Limits>("limits")) ?? DEFAULT_LIMITS;
+		const summary = summarizeUsage(
+			await deps.store.listRequests(),
+			deps.now ? deps.now() : new Date(),
+			{ ...DEFAULT_LIMITS, ...limits },
+		);
+		const cf = deps.cloudflare ? await deps.cloudflare(refresh) : null;
+		summary.cloudflare = !cf
+			? null
+			: "data" in cf
+				? { at: cf.at, rows: cloudflareRows(cf.data) }
+				: { error: cf.error };
+		return summary;
+	}
+
+	/** Kostenwächter vor jedem Losschicken: Grund zum Stoppen oder null. */
+	async function guard(engine: EngineId, runs: number) {
+		return costStop(await usageSummary(false), engine, runs);
 	}
 
 	/** Alle Wünsche desselben Sammelauftrags (inklusive r). */
@@ -332,8 +368,12 @@ export function createApi(deps: ApiDeps) {
 						return fail("Abschnitt unbekannt", 404);
 					}
 					let r = createRequest(input, uuid(), now());
-					if (raw.send !== false)
-						[r] = await send([r], undefined, normalizeDrafts(raw.drafts));
+					if (raw.send !== false) {
+						const drafts = normalizeDrafts(raw.drafts);
+						const stop = await guard(engineOf(r), drafts.length || 1);
+						if (stop) return fail(stop, 429);
+						[r] = await send([r], undefined, drafts);
+					}
 					await deps.store.putRequest(r);
 					return json(r, 201);
 				}
@@ -348,11 +388,11 @@ export function createApi(deps: ApiDeps) {
 					if (r.status !== "offen")
 						return fail("Auftrag ist schon unterwegs", 409);
 					const raw = await body();
-					list = await send(
-						[r],
-						isEngine(raw.engine) ? raw.engine : undefined,
-						normalizeDrafts(raw.drafts),
-					);
+					const engine = isEngine(raw.engine) ? raw.engine : undefined;
+					const drafts = normalizeDrafts(raw.drafts);
+					const stop = await guard(engine ?? engineOf(r), drafts.length || 1);
+					if (stop) return fail(stop, 429);
+					list = await send([r], engine, drafts);
 				} else if (action === "choose") {
 					const raw = await body();
 					const draft = r.external?.drafts?.find(
@@ -392,6 +432,8 @@ export function createApi(deps: ApiDeps) {
 					if (!text) return fail("Nachricht fehlt");
 					if (!r.external)
 						return fail("Auftrag wurde noch nicht gesendet", 409);
+					const stop = await guard(engineOf(r), 1);
+					if (stop) return fail(stop, 429);
 					await adapterFor(r).followUp(r, context(r), text);
 					if (raw.remember === true)
 						await remember(r.siteId, text, "nachbessern");
@@ -465,11 +507,14 @@ export function createApi(deps: ApiDeps) {
 				const ordered = [...pending].sort((a, b) =>
 					a.createdAt.localeCompare(b.createdAt),
 				);
-				const list = await send(
-					ordered,
-					isEngine(raw.engine) ? raw.engine : undefined,
-					normalizeDrafts(raw.drafts),
+				const engine = isEngine(raw.engine) ? raw.engine : undefined;
+				const drafts = normalizeDrafts(raw.drafts);
+				const stop = await guard(
+					engine ?? engineOf(ordered[0]),
+					drafts.length || 1,
 				);
+				if (stop) return fail(stop, 429);
+				const list = await send(ordered, engine, drafts);
 				await saveAll(list);
 				return json(list, 201);
 			}
@@ -549,15 +594,7 @@ export function createApi(deps: ApiDeps) {
 			}
 
 			if (parts[0] === "usage" && method === "GET") {
-				const limits =
-					(await deps.store.getSetting<Limits>("limits")) ?? DEFAULT_LIMITS;
-				return json(
-					summarizeUsage(
-						await deps.store.listRequests(),
-						deps.now ? deps.now() : new Date(),
-						{ ...DEFAULT_LIMITS, ...limits },
-					),
-				);
+				return json(await usageSummary(true));
 			}
 
 			if (parts[0] === "usage" && parts[1] === "limits" && method === "PUT") {

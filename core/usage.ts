@@ -20,9 +20,71 @@ export interface EngineUsage {
 	level: "ok" | "knapp" | "erreicht";
 }
 
+/** Freie Tagesgrenzen von Cloudflare (Workers Free, D1 Free). */
+export const CLOUDFLARE_FREE = {
+	requests: 100_000,
+	rowsRead: 5_000_000,
+	rowsWritten: 100_000,
+};
+
+export interface CloudflareUsage {
+	/** Tag (UTC), auf den sich die Zahlen beziehen. */
+	day: string;
+	requests: number;
+	rowsRead: number;
+	rowsWritten: number;
+}
+
+export interface CostRow {
+	id: keyof typeof CLOUDFLARE_FREE;
+	label: string;
+	used: number;
+	free: number;
+	level: EngineUsage["level"];
+}
+
 export interface UsageSummary {
 	engines: EngineUsage[];
 	github: { minutesMonth: number; free: number; level: EngineUsage["level"] };
+	/** Cloudflare-Verbrauch heute; null = kein Lese-Schlüssel, error = Abruf fehlgeschlagen. */
+	cloudflare?: { at: string; rows: CostRow[] } | { error: string } | null;
+}
+
+const cloudflareLabels: Record<CostRow["id"], string> = {
+	requests: "Aufrufe aller Worker",
+	rowsRead: "Datenbank gelesen (Zeilen)",
+	rowsWritten: "Datenbank geschrieben (Zeilen)",
+};
+
+export function cloudflareRows(u: CloudflareUsage): CostRow[] {
+	return (Object.keys(CLOUDFLARE_FREE) as CostRow["id"][]).map((id) => ({
+		id,
+		label: cloudflareLabels[id],
+		used: u[id],
+		free: CLOUDFLARE_FREE[id],
+		level: levelOf(u[id], CLOUDFLARE_FREE[id]),
+	}));
+}
+
+/**
+ * Kostenwächter: Grund, warum WEBSI jetzt nichts mehr losschickt, oder null.
+ * Stoppt, wenn der Tagesrichtwert des Modells mit diesem Auftrag überschritten
+ * würde oder eine freie Grenze bei Cloudflare erreicht ist.
+ */
+export function costStop(
+	usage: UsageSummary,
+	engine: string,
+	runs = 1,
+): string | null {
+	const e = usage.engines.find((x) => x.id === engine);
+	if (e?.limit && e.today + runs > e.limit)
+		return `Kostenwächter: ${e.label} ist mit ${e.today} von ${e.limit} Läufen heute am Richtwert${runs > 1 ? ` (dieser Auftrag bräuchte ${runs})` : ""}. Im Kontingent den Richtwert anheben, um weiterzumachen.`;
+	const cf = usage.cloudflare;
+	const full =
+		cf && "rows" in cf && cf.rows.find((r) => r.level === "erreicht");
+	if (full)
+		return `Kostenwächter: Bei Cloudflare ist die freie Tagesgrenze erreicht (${full.label}). Morgen geht es weiter.`;
+	return null;
 }
 
 const levelOf = (used: number, limit: number | null): EngineUsage["level"] =>
