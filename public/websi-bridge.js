@@ -59,6 +59,8 @@
 		.send:disabled { opacity: .45; cursor: default; }
 		.pin { background: #fff; color: #1f4e79; }
 		.pin[aria-pressed="true"] { background: #1f4e79; color: #fff; }
+		.mic { background: #fff; color: #1f4e79; }
+		.mic[aria-pressed="true"] { background: #a33a2b; border-color: #a33a2b; color: #fff; }
 		ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 		li button { all: unset; cursor: pointer; display: flex; gap: 8px; align-items: baseline; width: 100%; font-size: 13px; }
 		li button:hover .t, li button:focus-visible .t { text-decoration: underline; }
@@ -86,6 +88,7 @@
 				<ul></ul>
 				<div class="row">
 					<textarea rows="1" placeholder="Was soll sich an „${escapeHtml(def.label)}“ ändern?"></textarea>
+					<button type="button" class="mic" aria-pressed="false" title="Wunsch sprechen statt tippen" hidden>Sprechen</button>
 					<button type="button" class="pin" aria-pressed="false" title="Stelle im Abschnitt markieren">Stelle</button>
 					<button type="submit" class="send" disabled>${collect ? "Sammeln" : "Senden"}</button>
 				</div>
@@ -94,6 +97,7 @@
 		const area = root.querySelector("textarea");
 		const sendBtn = root.querySelector(".send");
 		const pinBtn = root.querySelector(".pin");
+		const micBtn = root.querySelector(".mic");
 		const hint = root.querySelector(".hint");
 		const bar = { def, host, root, area, pin: null, el: null };
 
@@ -105,8 +109,10 @@
 		area.addEventListener("keydown", (e) => {
 			if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) form.requestSubmit();
 		});
+		setupDictation(micBtn, area);
 		form.addEventListener("submit", (e) => {
 			e.preventDefault();
+			micBtn.stop?.();
 			const text = area.value.trim();
 			if (!text) return;
 			send({ type: "websi:submit", sectionId: def.id, text, pin: bar.pin, path: location.pathname + location.search });
@@ -133,6 +139,57 @@
 			sendBtn.textContent = on ? "Sammeln" : "Senden";
 		};
 		return bar;
+	}
+
+	// Sprachnachricht: die Spracherkennung des Geräts schreibt ins Feld.
+	// Kostet nichts; ohne Unterstützung im Browser bleibt der Knopf verborgen.
+	const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+	let activeMic = null;
+
+	function setupDictation(btn, area) {
+		if (!Recognition) return;
+		btn.hidden = false;
+		let rec = null;
+		let base = "";
+		const update = (text) => {
+			area.value = (base ? `${base} ` : "") + text;
+			area.dispatchEvent(new Event("input"));
+		};
+		btn.stop = () => rec?.stop();
+		btn.addEventListener("click", () => {
+			if (rec) {
+				rec.stop();
+				return;
+			}
+			activeMic?.stop();
+			rec = new Recognition();
+			rec.lang = document.documentElement.lang?.startsWith("en") ? "en-US" : "de-DE";
+			rec.continuous = true;
+			rec.interimResults = true;
+			base = area.value.trim();
+			rec.onresult = (e) => {
+				let text = "";
+				for (const r of e.results) text += r[0].transcript;
+				update(text.trim());
+			};
+			const end = () => {
+				rec = null;
+				if (activeMic === btn) activeMic = null;
+				btn.setAttribute("aria-pressed", "false");
+				btn.textContent = "Sprechen";
+				area.focus();
+			};
+			rec.onend = end;
+			rec.onerror = end;
+			try {
+				rec.start();
+				activeMic = btn;
+				btn.setAttribute("aria-pressed", "true");
+				btn.textContent = "Stopp";
+			} catch {
+				end();
+			}
+		});
 	}
 
 	function setPinMode(sectionId) {

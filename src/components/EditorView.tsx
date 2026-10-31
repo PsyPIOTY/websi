@@ -265,6 +265,7 @@ export function EditorView({
 						style={{ width: widths[device] }}
 						title={`Live-Ansicht ${profile.name}`}
 						src={src}
+						allow="microphone"
 					/>
 				</div>
 				{drafts.length > 0 && (
