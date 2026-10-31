@@ -147,8 +147,13 @@ input {
 	background: var(--ok);
 }
 
-.agent-pill--test .agent-pill__dot {
+.agent-pill--test .agent-pill__dot,
+.agent-pill--paco-wartet .agent-pill__dot {
 	background: var(--warn);
+}
+
+.agent-pill--paco-getrennt .agent-pill__dot {
+	background: var(--bad);
 }
 
 .main {

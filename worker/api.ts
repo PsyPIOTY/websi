@@ -12,6 +12,7 @@ import {
 	type EngineId,
 	isEngine,
 } from "../core/engines";
+import { type PacoContact, pacoLink } from "../core/paco";
 import {
 	addEvent,
 	createRequest,
@@ -38,6 +39,7 @@ import {
 	type UsageSummary,
 } from "../core/usage";
 import { monitorState, openNotices } from "./monitor";
+import { CONTACT_KEY } from "./paco";
 import type { Store } from "./storage";
 
 export interface ApiDeps {
@@ -51,6 +53,8 @@ export interface ApiDeps {
 	startStyle?: string[];
 	/** Monatsprüfung sofort ausführen (sonst täglich per Cron). */
 	runMonitor?: () => Promise<unknown>;
+	/** MCP_TOKEN gesetzt: die Brücke zu Paco ist eingerichtet. */
+	pacoConfigured?: boolean;
 	/** Cloudflare-Verbrauch heute; refresh false = nur Zwischenspeicher. */
 	cloudflare?: (
 		refresh: boolean,
@@ -126,6 +130,14 @@ export function createApi(deps: ApiDeps) {
 				? { at: cf.at, rows: cloudflareRows(cf.data) }
 				: { error: cf.error };
 		return summary;
+	}
+
+	async function paco() {
+		return pacoLink(
+			Boolean(deps.pacoConfigured),
+			await deps.store.getSetting<PacoContact>(CONTACT_KEY),
+			deps.now ? deps.now() : new Date(),
+		);
 	}
 
 	/** Kostenwächter vor jedem Losschicken: Grund zum Stoppen oder null. */
@@ -311,6 +323,21 @@ export function createApi(deps: ApiDeps) {
 					adapters: listAdapters(deps.env),
 					engines: ENGINES,
 					mode: deps.env.AGENT_MODE ?? "auto",
+					paco: await paco(),
+				});
+			}
+
+			// Verbindungstest für Paco: beim Einrichten und täglich als Lebenszeichen.
+			if (parts[0] === "verbindung" && method === "GET") {
+				const usage = await usageSummary(false);
+				const open = await openNotices(deps.store);
+				return json({
+					ok: true,
+					at: now(),
+					websi: "erreichbar",
+					paco: await paco(),
+					hinweise: open.length,
+					kostenwaechter: costStop(usage, DEFAULT_ENGINE) ?? "im Rahmen",
 				});
 			}
 

@@ -64,6 +64,21 @@ export function TopBar({
 				))}
 			</nav>
 			{usage && <UsageMenu usage={usage} onUsage={onUsage} />}
+			{status?.paco && status.paco.level !== "aus" && (
+				<span
+					className={`agent-pill agent-pill--paco-${status.paco.level}`}
+					title={
+						status.paco.text +
+						(status.paco.lastSeen
+							? ` (zuletzt ${new Date(status.paco.lastSeen).toLocaleString("de-DE")})`
+							: "")
+					}
+				>
+					<span className="agent-pill__dot" aria-hidden="true" />
+					<span className="visually-hidden">{status.paco.text}</span>
+					<span aria-hidden="true">Paco</span>
+				</span>
+			)}
 			{adapter && (
 				<span
 					className={`agent-pill ${test ? "agent-pill--test" : ""}`}

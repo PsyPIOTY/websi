@@ -1,4 +1,5 @@
 import type { EngineId, EngineInfo } from "../core/engines";
+import type { PacoLink } from "../core/paco";
 import type {
 	ChangeRequest,
 	DirectoryDef,
@@ -43,6 +44,7 @@ export interface StatusInfo {
 	adapters: { id: string; label: string; ready: boolean; planned?: boolean }[];
 	engines: EngineInfo[];
 	mode: string;
+	paco?: PacoLink;
 }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
