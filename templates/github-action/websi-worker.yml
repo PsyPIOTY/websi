@@ -1,24 +1,27 @@
-# WEBSI-Worker im Repo einer Website (empfohlen).
+# WEBSI-Worker im Repo einer Website: Ersatz für den Mac mini.
 # Ablegen unter .github/workflows/websi-worker.yml, dazu runner/websi-worker.ts
 # aus dem WEBSI-Repo nach .github/websi/websi-worker.ts kopieren.
 #
-# Läuft nur, wenn WEBSI einen Auftrag anlegt oder Peter nachbessert, und
-# verbraucht nur dann Actions-Minuten. Das Modell wählt Peter pro Auftrag in WEBSI.
+# Der Mac mini hat Vorrang. Dieser Workflow schaut alle 6 Stunden nach und
+# übernimmt nur Wünsche, die seit 24 Stunden niemand bearbeitet hat (Peters
+# Regel). Ist nichts fällig, endet er nach wenigen Sekunden; der teure Teil
+# (Abhängigkeiten, Modell) startet nur, wenn wirklich etwas zu tun ist.
+# Von Hand starten: Actions → WEBSI-Worker → Run workflow.
 #
 # Secrets (Settings → Secrets and variables → Actions):
-#   CLAUDE_CODE_OAUTH_TOKEN  für Claude über das Abo (einmal lokal `claude setup-token`)
+#   CLAUDE_CODE_OAUTH_TOKEN  für Claude über das Abo (einmal `claude setup-token`)
 #   CODEX_AUTH_JSON          optional, für Codex über ein ChatGPT-Abo (Inhalt von ~/.codex/auth.json)
-#   CLOUDFLARE_API_TOKEN     optional, für den Vorschau-Link
+#   CLOUDFLARE_API_TOKEN     optional, nur für den Vorschau-Weg mit Token
 # Variablen:
+#   WEBSI_WAIT_HOURS         optional, Wartezeit in Stunden (Standard 24)
 #   WEBSI_PREVIEW_CMD        optional, z. B. npm run build && npx wrangler versions upload --preview-alias {alias}
-# Aufträge fürs lokale Modell lässt dieser Workflow liegen; die holt der Worker auf Peters Rechner.
+# Aufträge fürs lokale Modell lässt dieser Workflow liegen; die holt der Mac mini.
 name: WEBSI-Worker
 
 on:
-  issues:
-    types: [opened]
-  issue_comment:
-    types: [created]
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -26,56 +29,56 @@ permissions:
   issues: write
 
 concurrency:
-  group: websi-${{ github.event.issue.number }}
+  group: websi-worker
   cancel-in-progress: false
 
+env:
+  WAIT_HOURS: ${{ vars.WEBSI_WAIT_HOURS || '24' }}
+
 jobs:
-  auftrag:
-    # Nur WEBSI-Aufträge, Kommentare nur von Menschen und nicht vom Worker selbst.
-    if: >-
-      contains(github.event.issue.labels.*.name, 'websi') &&
-      !github.event.issue.pull_request &&
-      (github.event_name == 'issues' ||
-        (github.event.comment.user.type != 'Bot' &&
-         !contains(github.event.comment.body, '<!-- websi-worker')))
+  pruefen:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 5
+    outputs:
+      due: ${{ steps.faellig.outputs.due }}
     steps:
-      - name: Modell aus dem Auftrag lesen
-        id: modell
-        run: |
-          engine=$(node -e '
-            const body = require(process.env.GITHUB_EVENT_PATH).issue.body || "";
-            const all = [...body.matchAll(/<!-- websi:(\{.*?\}) -->/g)];
-            let e = "claude";
-            try { e = JSON.parse(all.at(-1)[1]).engine || e; } catch {}
-            console.log(e);')
-          echo "engine=$engine" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
-        if: steps.modell.outputs.engine != 'ollama'
+        with:
+          sparse-checkout: .github/websi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Wünsche zählen, die seit der Wartezeit liegen
+        id: faellig
+        run: node .github/websi/websi-worker.ts --due --older-than "$WAIT_HOURS"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  auftrag:
+    needs: pruefen
+    if: needs.pruefen.outputs.due != '0' && needs.pruefen.outputs.due != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: actions/setup-node@v4
-        if: steps.modell.outputs.engine != 'ollama'
         with:
           node-version: 24
       - name: Abhängigkeiten der Website
-        if: steps.modell.outputs.engine != 'ollama'
         run: if [ -f package-lock.json ]; then npm ci; fi
-      - name: Modell bereitstellen
-        if: steps.modell.outputs.engine != 'ollama'
+      - name: Modelle bereitstellen
         run: |
-          case "${{ steps.modell.outputs.engine }}" in
-            claude) npm install -g @anthropic-ai/claude-code ;;
-            codex)
-              npm install -g @openai/codex
-              if [ -n "$CODEX_AUTH_JSON" ]; then mkdir -p ~/.codex && printf '%s' "$CODEX_AUTH_JSON" > ~/.codex/auth.json; fi ;;
-          esac
+          npm install -g @anthropic-ai/claude-code
+          if [ -n "$CODEX_AUTH_JSON" ]; then
+            npm install -g @openai/codex
+            mkdir -p ~/.codex && printf '%s' "$CODEX_AUTH_JSON" > ~/.codex/auth.json
+          fi
         env:
           CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
-      - name: Auftrag abarbeiten
-        if: steps.modell.outputs.engine != 'ollama'
-        run: node .github/websi/websi-worker.ts
+      - name: Liegengebliebene Wünsche abarbeiten
+        run: node .github/websi/websi-worker.ts --poll --older-than "$WAIT_HOURS"
         env:
           GITHUB_TOKEN: ${{ github.token }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
