@@ -195,6 +195,12 @@ export function App() {
 						{loadError}
 					</p>
 				)}
+				{status?.paco?.level === "getrennt" && (
+					<p className="banner banner--error" role="alert">
+						Verbindung zu Paco unterbrochen: {status.paco.text}. Wünsche aus
+						WEBSI laufen weiter, nur Paco sieht gerade nichts.
+					</p>
+				)}
 				{!data && !loadError && (
 					<p className="loading">Website wird geladen …</p>
 				)}

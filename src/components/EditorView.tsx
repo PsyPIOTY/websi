@@ -8,6 +8,7 @@ import {
 import { summarizeBySection } from "../../core/requests";
 import { type ChangeRequest, WHOLE_PAGE } from "../../core/types";
 import { api, type SiteData, withRelated } from "../api";
+import { draftNames } from "../drafts";
 import { store } from "../local";
 import { EngineSelect } from "./EngineSelect";
 import { StatusChip } from "./StatusChip";
@@ -43,6 +44,8 @@ export function EditorView({
 }: Props) {
 	const { profile, requests } = data;
 	// Sammeln ist der Standard: Wünsche unter mehreren Abschnitten, dann alles auf einmal.
+	// Mehrere Entwürfe kosten mehrfach: gilt nur für den nächsten Auftrag.
+	const [multi, setMulti] = useState(false);
 	const [collect, setCollectState] = useState(
 		() => store.get("websi.collect") !== "nein",
 	);
@@ -109,7 +112,9 @@ export function EditorView({
 					pagePath: path ?? pagePath,
 					engine,
 					send: !collect,
+					drafts: !collect && multi ? draftNames() : undefined,
 				});
+				if (!collect) setMulti(false);
 				onCreated(r);
 				const failed = r.events.at(-1)?.kind === "fehler";
 				setToast(
@@ -123,14 +128,20 @@ export function EditorView({
 				setToast(`Nicht gespeichert: ${(e as Error).message}`);
 			}
 		},
-		[profile.id, pagePath, onCreated, engine, collect],
+		[profile.id, pagePath, onCreated, engine, collect, multi],
 	);
 
 	const [sending, setSending] = useState(false);
 	const sendAll = async () => {
 		setSending(true);
 		try {
-			const list = await api.sendBatch(profile.id, engine);
+			const list = await api.sendBatch(
+				profile.id,
+				engine,
+				undefined,
+				multi ? draftNames() : undefined,
+			);
+			setMulti(false);
 			onChanged(list);
 			const failed = list[0]?.events.at(-1)?.kind === "fehler";
 			setToast(
@@ -242,6 +253,17 @@ export function EditorView({
 						/>
 						<span>Sammeln</span>
 					</label>
+					<label
+						className="toggle"
+						title={`Pro Auftrag ${draftNames().length} Fassungen zur Auswahl (${draftNames().join(", ")}). Kostet ${draftNames().length}× Kontingent.`}
+					>
+						<input
+							type="checkbox"
+							checked={multi}
+							onChange={(e) => setMulti(e.target.checked)}
+						/>
+						<span>{draftNames().length} Entwürfe</span>
+					</label>
 					<a
 						className="editor__live"
 						href={new URL(profile.editorPath, profile.url).toString()}
@@ -265,6 +287,7 @@ export function EditorView({
 						style={{ width: widths[device] }}
 						title={`Live-Ansicht ${profile.name}`}
 						src={src}
+						allow="microphone"
 					/>
 				</div>
 				{drafts.length > 0 && (
@@ -274,7 +297,10 @@ export function EditorView({
 							profile.sections.find((x) => x.id === id)?.label ??
 							WHOLE_PAGE.label
 						}
-						engine={engineLabel(engine)}
+						engine={
+							engineLabel(engine) +
+							(multi ? ` · ${draftNames().length} Entwürfe` : "")
+						}
 						sending={sending}
 						onSend={sendAll}
 						onDrop={dropDraft}

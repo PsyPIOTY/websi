@@ -1,3 +1,4 @@
+import type { Draft } from "../drafts";
 import { previewKey } from "../preview";
 import type { ChangeRequest, SiteProfile } from "../types";
 import {
@@ -128,6 +129,7 @@ export class GitHubClaudeAdapter implements AgentAdapter {
 								engine: meta.engine,
 								seconds: meta.seconds,
 								where: meta.where ?? "github",
+								...(meta.runs && meta.runs > 1 ? { runs: meta.runs } : {}),
 							}
 						: undefined,
 			};
@@ -137,7 +139,25 @@ export class GitHubClaudeAdapter implements AgentAdapter {
 			.filter(Boolean)
 			.at(-1);
 
-		const pull = await this.findPull(repo, n);
+		// Mehrere Entwürfe: bis Peter wählt, zählen nur diese.
+		const draftMeta = agentComments
+			.map((c) => workerMeta(c.body)?.drafts)
+			.filter(Boolean)
+			.at(-1);
+		if (draftMeta?.length && !request.external?.chosen) {
+			const drafts: Draft[] = [];
+			for (const d of draftMeta)
+				drafts.push({
+					name: d.name,
+					branch: d.branch,
+					proposalUrl: d.url,
+					previewUrl:
+						d.preview ?? (await this.cloudflarePreview(repo, ctx, d.branch)),
+				});
+			return { status: "vorschlag", messages, drafts };
+		}
+
+		const pull = await this.findPull(repo, n, request.external?.chosen);
 		if (pull) {
 			return {
 				status: "vorschlag",
@@ -214,12 +234,18 @@ export class GitHubClaudeAdapter implements AgentAdapter {
 		return pickPreviewUrl(texts.join("\n"), ctx.site);
 	}
 
-	private async findPull(repo: string, n: string) {
-		const pulls = await this.gh<GhPull[]>(
+	private async pulls(repo: string) {
+		return this.gh<GhPull[]>(
 			`${repo}/pulls?state=all&per_page=50&sort=created&direction=desc`,
 		);
+	}
+
+	/** Pull Request des Vorschlags; nach einer Entwurfswahl der des gewählten Entwurfs. */
+	private async findPull(repo: string, n: string, prefer?: string) {
+		const pulls = await this.pulls(repo);
 		const ref = new RegExp(`(^|\\D)#${n}(\\D|$)`);
 		return (
+			(prefer ? pulls.find((p) => p.head.ref === prefer) : undefined) ??
 			pulls.find((p) => isProposalBranch(p.head.ref, n)) ??
 			pulls.find((p) => p.body !== null && ref.test(p.body))
 		);
@@ -248,7 +274,7 @@ export class GitHubClaudeAdapter implements AgentAdapter {
 		const n = request.external?.id;
 		if (!n) throw new Error("Auftrag wurde noch nicht gesendet");
 		const repo = this.repoPath(ctx);
-		let pull = await this.findPull(repo, n);
+		let pull = await this.findPull(repo, n, request.external?.chosen);
 		if (!pull) {
 			const branch =
 				request.external?.branch ?? (await this.findBranch(repo, n));
@@ -276,16 +302,53 @@ export class GitHubClaudeAdapter implements AgentAdapter {
 		const n = request.external?.id;
 		if (!n) return;
 		const repo = this.repoPath(ctx);
-		const pull = await this.findPull(repo, n);
-		if (pull && pull.state === "open") {
-			await this.gh(`${repo}/pulls/${pull.number}`, {
-				method: "PATCH",
-				body: JSON.stringify({ state: "closed" }),
-			});
+		// Alle offenen Vorschläge zum Auftrag schließen, auch Entwürfe.
+		for (const pull of await this.pulls(repo)) {
+			if (pull.state === "open" && isProposalBranch(pull.head.ref, n))
+				await this.closePull(repo, pull);
 		}
 		await this.gh(`${repo}/issues/${n}`, {
 			method: "PATCH",
 			body: JSON.stringify({ state: "closed", state_reason: "not_planned" }),
+		});
+	}
+
+	private async closePull(repo: string, pull: GhPull) {
+		await this.gh(`${repo}/pulls/${pull.number}`, {
+			method: "PATCH",
+			body: JSON.stringify({ state: "closed" }),
+		});
+	}
+
+	/**
+	 * Entwurf wählen: die anderen Pull Requests schließen und ihre Branches
+	 * löschen. Danach gibt es nur noch einen Vorschlag; Nachbessern und
+	 * Veröffentlichen laufen wie gewohnt darauf.
+	 */
+	async choose(request: ChangeRequest, ctx: AgentContext, draft: Draft) {
+		const n = request.external?.id;
+		if (!n) throw new Error("Auftrag wurde noch nicht gesendet");
+		const repo = this.repoPath(ctx);
+		const others = (request.external?.drafts ?? []).filter(
+			(d) => d.branch !== draft.branch && isProposalBranch(d.branch, n),
+		);
+		const pulls = await this.pulls(repo);
+		for (const d of others) {
+			const pull = pulls.find(
+				(p) => p.head.ref === d.branch && p.state === "open",
+			);
+			if (pull) await this.closePull(repo, pull);
+			await this.gh(
+				`${repo}/git/refs/heads/${d.branch.split("/").map(encodeURIComponent).join("/")}`,
+				{ method: "DELETE" },
+			).catch(() => {});
+		}
+		// Mit Worker-Markierung, damit der Worker die Wahl nicht als Nachbesserung liest.
+		await this.gh(`${repo}/issues/${n}/comments`, {
+			method: "POST",
+			body: JSON.stringify({
+				body: `<!-- websi-worker ${JSON.stringify({ chosen: draft.branch })} -->\nPeter hat den Entwurf „${draft.name}“ gewählt. Die anderen sind verworfen.`,
+			}),
 		});
 	}
 }
@@ -331,6 +394,8 @@ interface WorkerMeta {
 	seconds?: number;
 	where?: string;
 	preview?: string;
+	runs?: number;
+	drafts?: { name: string; branch: string; url: string; preview?: string }[];
 }
 
 /** Liest die Steuerdaten aus einem Worker-Kommentar: <!-- websi-worker {...} -->. */
@@ -341,6 +406,28 @@ export function workerMeta(body: string): WorkerMeta | null {
 		const data = JSON.parse(m[1]) as WorkerMeta;
 		if (data.preview && !/^https:\/\//.test(data.preview))
 			data.preview = undefined;
+		if (data.drafts !== undefined) {
+			data.drafts = Array.isArray(data.drafts)
+				? data.drafts
+						.filter(
+							(d) =>
+								d &&
+								typeof d.name === "string" &&
+								typeof d.branch === "string" &&
+								typeof d.url === "string" &&
+								/^https:\/\//.test(d.url),
+						)
+						.map((d) => ({
+							name: d.name.slice(0, 40),
+							branch: d.branch,
+							url: d.url,
+							preview:
+								typeof d.preview === "string" && /^https:\/\//.test(d.preview)
+									? d.preview
+									: undefined,
+						}))
+				: undefined;
+		}
 		return data;
 	} catch {
 		return null;

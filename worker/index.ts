@@ -1,8 +1,10 @@
 import { siteProfiles, startStyle } from "../sites";
 import { type AccessEnv, isAllowed } from "./access";
 import { createApi } from "./api";
+import { cloudflareUsage } from "./costs";
 import { handleMcp } from "./mcp";
 import { type MonitorEnv, runMonitor } from "./monitor";
+import { markContact } from "./paco";
 import { belongsToPreview, proxyRequest } from "./proxy";
 import { D1Store } from "./storage";
 import { scanSite } from "./visibility";
@@ -45,17 +47,18 @@ function mcpAllowed(request: Request, env: Env) {
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		const isMcp = new URL(request.url).pathname === MCP_PATH;
-		if (
-			!(
-				(tokenPath(request) && mcpAllowed(request, env)) ||
-				(await isAllowed(request, env))
-			)
-		)
+		const viaToken = tokenPath(request) && mcpAllowed(request, env);
+		if (!(viaToken || (await isAllowed(request, env))))
 			return new Response("Kein Zugang", { status: 403 });
 
 		if (belongsToPreview(request)) return proxyRequest(request, siteProfiles);
 
 		const store = new D1Store(env.DB);
+		// Jeder Abruf mit Token ist ein Lebenszeichen von Paco.
+		if (viaToken)
+			await markContact(store, isMcp ? "mcp" : "hinweise", new Date()).catch(
+				() => {},
+			);
 		const api = createApi({
 			store,
 			sites: siteProfiles,
@@ -63,6 +66,8 @@ export default {
 			scan: (site) => scanSite(site),
 			startStyle,
 			runMonitor: () => runMonitor({ store, sites: siteProfiles, env }, true),
+			cloudflare: (refresh) => cloudflareUsage({ store, env }, refresh),
+			pacoConfigured: Boolean(env.MCP_TOKEN),
 		});
 		if (isMcp) return handleMcp(request, api.handle);
 		const response = await api.handle(request);
