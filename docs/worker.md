@@ -33,20 +33,28 @@ Ein weiteres Modell ist ein neuer Eintrag in `engines`.
 
 ## Wo er läuft
 
-**In GitHub.** Startet nur, wenn ein Auftrag kommt.
+Peters Regel (31.10.2026): **Der Mac mini hat Vorrang. GitHub übernimmt nur
+Wünsche, die seit 24 Stunden liegen.**
+
+**Auf dem Mac mini (Hauptweg).** Siehe unten. Holt alle 10 Minuten neue Aufträge.
+
+**In GitHub (Ersatz).** Schaut alle 6 Stunden nach und bearbeitet nur, was seit
+24 Stunden niemand angefasst hat (`--older-than 24`). Die Uhr läuft ab dem
+Anlegen des Auftrags bzw. ab Peters erster unbeantworteter Nachbesserung.
+Ist nichts fällig, endet der Lauf nach wenigen Sekunden (`--due` zählt nur).
 1. [`templates/github-action/websi-worker.yml`](../templates/github-action/websi-worker.yml)
    nach `.github/workflows/` im Repo der Website kopieren.
 2. `runner/websi-worker.ts` nach `.github/websi/websi-worker.ts` kopieren.
 3. Secret `CLAUDE_CODE_OAUTH_TOKEN` im Repo der Website setzen.
+4. Optional: Repository-Variable `WEBSI_WAIT_HOURS`, falls die 24 Stunden
+   sich ändern sollen.
 
-Private Repos haben 2.000 freie Actions-Minuten im Monat; ein Auftrag braucht
-meist wenige Minuten. Hinweis: Ein Pull Request, den die Action anlegt, startet
-selbst keine weiteren Workflows (Regel von GitHub).
+Private Repos haben 2.000 freie Actions-Minuten im Monat. Die Nachschau kostet
+etwa 120 Minuten im Monat (4 kurze Läufe am Tag), ein Auftrag meist wenige
+Minuten. Ein Secret gilt nur für sein Repo: Jede Website mit eigenem Repo
+braucht Workflow, Worker-Datei und Secret einmal.
 
-Aufträge fürs lokale Modell lässt der Workflow liegen; die holt der Worker auf
-Peters Rechner (`--only ollama`).
-
-**Auf dem eigenen Rechner (Peters Wahl: Mac mini).** Keine Actions-Minuten,
+**Auf dem eigenen Rechner (Mac mini).** Keine Actions-Minuten,
 nötig für `ollama`. Im lokalen Klon der Website:
 
 ```bash

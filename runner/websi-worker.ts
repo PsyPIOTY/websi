@@ -14,6 +14,8 @@
  *   node websi-worker.ts --poll           alle offenen Aufträge einmal prüfen
  *   node websi-worker.ts --poll --every 10  dauerhaft, alle 10 Minuten
  *   node websi-worker.ts --poll --only ollama  lokal nur Aufträge fürs lokale Modell
+ *   node websi-worker.ts --poll --older-than 24  nur Aufträge, die seit 24 Stunden warten
+ *   node websi-worker.ts --due --older-than 24   nur zählen, was fällig ist (für GitHub)
  *
  * Das Modell wählt Peter pro Auftrag in WEBSI; es steht in den Steuerdaten des Issues.
  */
@@ -39,6 +41,7 @@ export interface GhIssue {
 	state: string;
 	labels: { name: string }[];
 	pull_request?: unknown;
+	created_at?: string;
 }
 export interface GhComment {
 	body: string;
@@ -136,6 +139,22 @@ export function decide(
 	if (hasWorkerReply(comments) && !followUps.length)
 		return { kind: "nichts", reason: "wartet auf Peter" };
 	return { kind: "neu", followUps };
+}
+
+/**
+ * Seit wann ein Wunsch auf den Worker wartet: Peters erste Nachricht nach der
+ * letzten Antwort des Workers, sonst das Anlegen des Auftrags.
+ */
+export function waitingSince(issue: GhIssue, comments: GhComment[]) {
+	let last = -1;
+	comments.forEach((c, i) => {
+		if (isWorkerComment(c)) last = i;
+	});
+	const first = comments
+		.slice(last + 1)
+		.find((c) => c.user?.type !== "Bot" && stripTask(c.body));
+	if (first) return Date.parse(first.created_at);
+	return last === -1 ? Date.parse(issue.created_at ?? "") || 0 : Date.now();
 }
 
 /** Entfernt Ansprache und Steuerdaten aus Issue- und Kommentartexten. */
@@ -496,7 +515,41 @@ export interface Options {
 	where?: string;
 	/** Nur Aufträge mit diesem Modell abarbeiten (z. B. lokal nur "ollama"). */
 	only?: string;
+	/** Nur Aufträge, die mindestens so viele Stunden warten (GitHub als Ersatz für den Mac mini). */
+	olderThanHours?: number;
 	log?: (line: string) => void;
+}
+
+/** Prüft ein Issue, ohne etwas zu ändern: Ist es hier und jetzt dran? */
+export async function assess(n: number, opts: Options) {
+	const { gh } = opts;
+	const where = opts.where ?? "lokal";
+	const [issue, comments, names] = await Promise.all([
+		gh.issue(n),
+		gh.comments(n),
+		gh.branchNames(),
+	]);
+	const work = decide(issue, comments, findBranch(names, n));
+	const wanted =
+		taskMeta(issue.body).engine ?? process.env.WEBSI_ENGINE ?? "claude";
+	const skip = (reason: string) => ({
+		issue,
+		wanted,
+		work: { kind: "nichts" as const, reason },
+	});
+	if (work.kind === "nichts") return skip(work.reason);
+	if (opts.only && wanted !== opts.only)
+		return skip(`Modell ${wanted}, hier nur ${opts.only}`);
+	if (where === "github" && wanted === "ollama")
+		return skip("lokales Modell läuft nur auf deinem Rechner");
+	if (opts.olderThanHours) {
+		const hours = (Date.now() - waitingSince(issue, comments)) / 3_600_000;
+		if (hours < opts.olderThanHours)
+			return skip(
+				`wartet erst ${Math.floor(hours)} Std., hier erst ab ${opts.olderThanHours}`,
+			);
+	}
+	return { issue, wanted, work };
 }
 
 /** Bearbeitet ein Issue vollständig. Gibt zurück, was passiert ist. */
@@ -504,25 +557,10 @@ export async function handleIssue(n: number, opts: Options) {
 	const { gh, cwd } = opts;
 	const where = opts.where ?? "lokal";
 	const log = opts.log ?? console.log;
-	const [issue, comments, names] = await Promise.all([
-		gh.issue(n),
-		gh.comments(n),
-		gh.branchNames(),
-	]);
-	const work = decide(issue, comments, findBranch(names, n));
+	const { issue, wanted, work } = await assess(n, opts);
 	if (work.kind === "nichts") {
 		log(`#${n}: übersprungen (${work.reason})`);
 		return work;
-	}
-	const wanted =
-		taskMeta(issue.body).engine ?? process.env.WEBSI_ENGINE ?? "claude";
-	if (opts.only && wanted !== opts.only) {
-		log(`#${n}: übersprungen (Modell ${wanted}, hier nur ${opts.only})`);
-		return { kind: "nichts" as const, reason: "anderes Modell" };
-	}
-	if (where === "github" && wanted === "ollama") {
-		log(`#${n}: übersprungen (lokales Modell läuft nur auf deinem Rechner)`);
-		return { kind: "nichts" as const, reason: "nur lokal" };
 	}
 	const engine =
 		typeof opts.engine === "function" ? opts.engine(wanted) : opts.engine;
@@ -675,7 +713,25 @@ async function main() {
 		cwd,
 		where: process.env.GITHUB_ACTIONS === "true" ? "github" : "lokal",
 		only: arg("only"),
+		olderThanHours: Number(arg("older-than") ?? 0) || undefined,
 	};
+
+	if (process.argv.includes("--due")) {
+		// Nur zählen. In GitHub entscheidet das, ob der teure Teil überhaupt startet.
+		let due = 0;
+		for (const issue of await opts.gh.openTasks()) {
+			const { work } = await assess(issue.number, opts);
+			if (work.kind === "nichts")
+				console.log(`#${issue.number}: nicht fällig (${work.reason})`);
+			else {
+				console.log(`#${issue.number}: fällig`);
+				due++;
+			}
+		}
+		const out = process.env.GITHUB_OUTPUT;
+		if (out) writeFileSync(out, `due=${due}\n`, { flag: "a" });
+		return;
+	}
 
 	const poll = async () => {
 		for (const issue of await opts.gh.openTasks()) {

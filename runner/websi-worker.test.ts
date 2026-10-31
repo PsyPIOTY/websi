@@ -20,6 +20,7 @@ import {
 	selectorTokens,
 	slug,
 	taskMeta,
+	waitingSince,
 } from "./websi-worker.ts";
 
 const body = [
@@ -92,6 +93,37 @@ describe("Entscheidung", () => {
 
 	it("zählt eigene Kommentare nicht als Nachbesserung, auch unter Peters Konto", () => {
 		expect(pendingFollowUps([c("a"), c(`${MARKER} fertig`)])).toEqual([]);
+	});
+});
+
+describe("Wartezeit für GitHub als Ersatz", () => {
+	const at = (iso: string, text: string, user = peter): GhComment => ({
+		body: text,
+		created_at: iso,
+		user,
+	});
+	const opened = { ...issue, created_at: "2026-10-30T08:00:00Z" };
+
+	it("zählt ab dem Anlegen, solange der Worker nicht geantwortet hat", () => {
+		expect(waitingSince(opened, [])).toBe(Date.parse("2026-10-30T08:00:00Z"));
+	});
+
+	it("zählt beim Nachbessern ab Peters erster neuer Nachricht", () => {
+		const comments = [
+			at("2026-10-30T09:00:00Z", `${MARKER}\nVorschlag fertig`, bot),
+			at("2026-10-31T10:00:00Z", "@claude noch kürzer"),
+			at("2026-10-31T11:00:00Z", "und ohne Ausrufezeichen"),
+		];
+		expect(waitingSince(opened, comments)).toBe(
+			Date.parse("2026-10-31T10:00:00Z"),
+		);
+	});
+
+	it("wartet nicht, wenn der Worker zuletzt geantwortet hat", () => {
+		const comments = [at("2026-10-30T09:00:00Z", `${MARKER}\nfertig`, bot)];
+		expect(waitingSince(opened, comments)).toBeGreaterThan(
+			Date.parse("2026-10-31T00:00:00Z"),
+		);
 	});
 });
 
@@ -253,6 +285,44 @@ describe("Ablauf mit echtem Git", () => {
 		expect(readFileSync(join(work, "faq.txt"), "utf8")).toBe("Lange Frage\n");
 		expect(posted).toHaveLength(1);
 		expect(posted[0].body.body).toContain("bleibt rot");
+	});
+
+	it("übernimmt in GitHub erst Wünsche, die seit 24 Stunden warten", async () => {
+		const { work } = setup();
+		const { gh, posted } = fakeGitHub();
+		const used: string[] = [];
+		const engine: Engine = {
+			id: "fake",
+			async run({ cwd }) {
+				used.push("fake");
+				writeFileSync(join(cwd, "faq.txt"), "Kurze Frage\n");
+				return "Kürzer.";
+			},
+		};
+		const hoursAgo = (h: number) =>
+			new Date(Date.now() - h * 3_600_000).toISOString();
+		const opts = {
+			gh,
+			engine,
+			cwd: work,
+			where: "github",
+			olderThanHours: 24,
+			log: () => {},
+		};
+		try {
+			process.env.WEBSI_CHECK = "-";
+			issue.created_at = hoursAgo(5);
+			expect((await handleIssue(7, opts)).kind).toBe("nichts");
+			expect(used).toEqual([]);
+			expect(posted).toEqual([]);
+
+			issue.created_at = hoursAgo(25);
+			expect((await handleIssue(7, opts)).kind).toBe("vorschlag");
+			expect(used).toEqual(["fake"]);
+		} finally {
+			delete issue.created_at;
+			delete process.env.WEBSI_CHECK;
+		}
 	});
 
 	it("nimmt das Modell aus dem Auftrag, lässt lokale Modelle in GitHub liegen und baut eine Vorschau", async () => {
