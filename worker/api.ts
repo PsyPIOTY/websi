@@ -52,6 +52,8 @@ export interface ApiDeps {
 	scan: (site: SiteProfile) => Promise<VisibilityReport>;
 	/** Stil-Regeln für alle Websites, die WEBSI beim ersten Start einmal anlegt. */
 	startStyle?: string[];
+	/** Regeln nur für Peters eigene Seiten: liegen sie noch bei „alle“, verschiebt WEBSI sie einmal. */
+	peterStyle?: string[];
 	/** Monatsprüfung sofort ausführen (sonst täglich per Cron). */
 	runMonitor?: () => Promise<unknown>;
 	/** MCP_TOKEN gesetzt: die Brücke zu Paco ist eingerichtet. */
@@ -107,11 +109,40 @@ export function createApi(deps: ApiDeps) {
 
 	/** Legt die Start-Regeln einmal an. Was Peter löscht, bleibt gelöscht. */
 	async function seedStyle() {
-		if (!deps.startStyle?.length) return;
-		if (await deps.store.getSetting("stil-start")) return;
-		for (const text of deps.startStyle)
-			await remember(ALL_SITES, text, "peter");
-		await deps.store.putSetting("stil-start", now());
+		if (
+			deps.startStyle?.length &&
+			!(await deps.store.getSetting("stil-start"))
+		) {
+			for (const text of deps.startStyle)
+				await remember(ALL_SITES, text, "peter");
+			await deps.store.putSetting("stil-start", now());
+		}
+		for (const s of deps.sites) {
+			const key = `stil-start:${s.id}`;
+			if (!s.startStyle?.length || (await deps.store.getSetting(key))) continue;
+			for (const text of s.startStyle) await remember(s.id, text, "peter");
+			await deps.store.putSetting(key, now());
+		}
+		await movePeterStyle();
+	}
+
+	/**
+	 * Regeln, die nur zu Peters eigenen Seiten passen, liegen bei „alle“ und gälten
+	 * sonst auch für fremde Seiten. Einmal je Regel: eine Kopie für jede eigene Seite,
+	 * mit demselben An/Aus, die Regel bei „alle“ entfällt. Gelöschtes bleibt gelöscht.
+	 */
+	async function movePeterStyle() {
+		if (!deps.peterStyle?.length || !deps.sites.some((s) => s.fremd)) return;
+		if (await deps.store.getSetting("stil-nur-peter")) return;
+		const global = (await deps.store.listStyle(ALL_SITES)).filter(
+			(x) => x.siteId === ALL_SITES && deps.peterStyle?.includes(x.text),
+		);
+		for (const rule of global) {
+			await deps.store.deleteStyle(rule.id);
+			for (const s of deps.sites.filter((x) => !x.fremd))
+				await deps.store.putStyle({ ...rule, id: uuid(), siteId: s.id });
+		}
+		await deps.store.putSetting("stil-nur-peter", now());
 	}
 
 	async function styleFor(siteId: string) {

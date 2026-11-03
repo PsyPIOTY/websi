@@ -1,4 +1,4 @@
-import { siteProfiles, startStyle } from "../sites";
+import { peterStyle, siteProfiles, startStyle } from "../sites";
 import { type AccessEnv, isAllowed } from "./access";
 import { createApi } from "./api";
 import { cloudflareUsage } from "./costs";
@@ -66,6 +66,7 @@ export default {
 			env,
 			scan: (site) => scanSite(site),
 			startStyle,
+			peterStyle,
 			runMonitor: () => runMonitor({ store, sites: siteProfiles, env }, true),
 			cloudflare: (refresh) => cloudflareUsage({ store, env }, refresh),
 			pacoConfigured: Boolean(env.MCP_TOKEN),

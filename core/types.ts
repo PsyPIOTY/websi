@@ -80,6 +80,13 @@ export interface SiteProfile {
 	 * die mitgehen, legt der Mac mini fest (KIAPP online_stellen.py, SEITEN).
 	 */
 	online?: { domain: string };
+	/**
+	 * Gehört nicht Peter, z. B. Ismails Seite (Peter 3.11.2026): Regeln aus
+	 * `peterStyle` (sites/index.ts) gelten hier nicht.
+	 */
+	fremd?: boolean;
+	/** Eigene Stil-Regeln dieser Website. WEBSI legt sie einmal an, danach ändert Peter sie unter „Stil“. */
+	startStyle?: string[];
 }
 
 export type RequestStatus =

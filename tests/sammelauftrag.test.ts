@@ -274,3 +274,68 @@ describe("Drei Entwürfe zur Auswahl", () => {
 		expect(synced.data.external?.previewUrl).toBeTruthy();
 	});
 });
+
+describe("Stil-Regeln für fremde Seiten (Ismail)", () => {
+	function withPeterStyle(startStyle: string[], peterStyle: string[]) {
+		const store = new MemoryStore();
+		let n = 0;
+		const api = createApi({
+			store,
+			sites: siteProfiles,
+			env: { AGENT_MODE: "test" },
+			uuid: () => `s${++n}`,
+			now: () => new Date("2026-11-03T21:00:00Z"),
+			startStyle,
+			peterStyle,
+			scan: async (site): Promise<VisibilityReport> => ({
+				siteId: site.id,
+				scannedAt: "2026-11-03T21:00:00Z",
+				score: 50,
+				checks: [],
+				keywords: [],
+				errors: [],
+			}),
+		});
+		const rules = async (siteId: string) => {
+			const res = await api.handle(
+				new Request(`https://websi.test/api/websi/style/${siteId}`),
+			);
+			if (!res) throw new Error("keine Antwort");
+			const data = (await res.json()) as {
+				rules: { text: string; siteId: string; active: boolean }[];
+			};
+			return data.rules;
+		};
+		return { store, rules };
+	}
+
+	it("legt Ismails eigene Regeln einmal an, nur für seine Seite", async () => {
+		const { rules } = withPeterStyle(["Sie statt Du"], []);
+		const ismail = await rules("ismail");
+		expect(ismail.map((r) => r.text)).toContain(
+			"Ismail ist Fahrer, nie Guide oder Reiseleiter",
+		);
+		expect(ismail.find((r) => r.text === "Sie statt Du")?.siteId).toBe("alle");
+		expect((await rules("praxis")).map((r) => r.text)).toEqual([
+			"Sie statt Du",
+		]);
+	});
+
+	it("verschiebt Peters persönliche Regeln einmal zu seinen eigenen Seiten", async () => {
+		const peter = "Preise nur in Peters Wortlaut";
+		const { store, rules } = withPeterStyle(["Sie statt Du", peter], [peter]);
+		expect((await rules("ismail")).map((r) => r.text)).not.toContain(peter);
+		for (const id of ["praxis", "humansource"]) {
+			const own = (await rules(id)).find((r) => r.text === peter);
+			expect(own).toMatchObject({ siteId: id, active: true });
+		}
+		// Peter löscht die Regel bei der Praxis: sie kommt nicht wieder.
+		const praxis = (await store.listStyle("praxis")).find(
+			(r) => r.text === peter,
+		);
+		await store.deleteStyle(praxis?.id ?? "");
+		expect((await rules("praxis")).map((r) => r.text)).toEqual([
+			"Sie statt Du",
+		]);
+	});
+});
