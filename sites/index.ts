@@ -1,12 +1,13 @@
 import type { SiteProfile } from "../core/types";
 import { humansource } from "./humansource";
+import { ismail } from "./ismail";
 import { praxis } from "./praxis";
 
 /**
  * Alle hinterlegten Websites. Eine neue Website = eine neue Datei in diesem
  * Ordner + ein Eintrag hier. Bearbeitet wird immer nur eine davon.
  */
-export const siteProfiles: SiteProfile[] = [praxis, humansource];
+export const siteProfiles: SiteProfile[] = [praxis, humansource, ismail];
 
 /**
  * Peters Stil-Regeln für alle Websites (seine Antworten E3, 23.10.2026). WEBSI
@@ -20,3 +21,10 @@ export const startStyle = [
 	"Angebote sehr förmlich formulieren, Peters Stil bleibt erkennbar",
 	"Farben und Schriften bleiben, außer Peter wünscht es ausdrücklich",
 ];
+
+/**
+ * Gilt nur für Peters eigene Seiten, nicht für fremde wie Ismails (Peter 3.11.2026,
+ * A7). Liegt eine davon noch bei „alle“, verschiebt WEBSI sie einmal zu jeder
+ * Seite ohne `fremd`.
+ */
+export const peterStyle = ["Preise und Therapie-Aussagen nur in Peters Wortlaut"];

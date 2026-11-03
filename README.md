@@ -118,6 +118,9 @@ Von Hand:
 
 1. `sites/<name>.ts` nach Vorbild von `sites/humansource.ts` anlegen:
    Adresse, Repo, Abschnitte mit CSS-Selektor, Suchbegriffe, Verzeichnisse.
+   Gehört die Seite nicht Peter (wie `sites/ismail.ts`), `fremd: true` setzen:
+   Regeln aus `peterStyle` gelten dort nicht. Eigene Start-Regeln stehen in
+   `startStyle` der Seite.
 2. In `sites/index.ts` eintragen.
 3. Im Editor prüfen: Die Abschnittsliste zeigt „nicht gefunden“, wenn ein
    Selektor nicht passt.
