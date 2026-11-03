@@ -74,7 +74,13 @@ dann konzeptstudio, „Settings“, „Build“, „Connect“:
 Fragt Cloudflare nach eigenen Einstellungen für Vorschauen (Variablen,
 Bindungen): nichts eintragen, bestätigen.
 
-Dann „Connect“. Cloudflare baut erst beim nächsten Merge. Darum danach den
+Gibt es konzeptstudio in deinem Konto noch nicht (es lag anfangs in einem
+fremden Konto): zuerst den Konzeptstudio-Vorschlag mergen, dann „Create
+application“, „Import a repository“, psychologe-konzeptstudio, „Project name“
+genau `konzeptstudio`, Build command `npm run build`, „Deploy“. Die
+Feedback-Datenbank legt Cloudflare dabei selbst an.
+
+Sonst „Connect“. Cloudflare baut erst beim nächsten Merge. Darum danach den
 Konzeptstudio-Vorschlag mit der Praxisseite mergen; ab dann zeigt WEBSI die
 Praxisseite unter `/praxis`. Ist er schon gemergt, hat Paco einen kleinen
 Vorschlag für den ersten Bau bereit.

@@ -4,6 +4,8 @@ export const humansource: SiteProfile = {
 	id: "humansource",
 	name: "humansourcebusiness",
 	stage: "entwurf",
+	// Noch im alten Cloudflare-Konto; zieht um, sobald der Proxy (Konzeptstudio SETUP.md 7a)
+	// in Peters Konto läuft.
 	url: "https://humansource.peter-jarek.workers.dev",
 	editorPath: "/",
 	pages: ["/"],
