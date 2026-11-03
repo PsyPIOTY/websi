@@ -75,6 +75,11 @@ export interface SiteProfile {
 	};
 	directories: DirectoryDef[];
 	notes?: string;
+	/**
+	 * Knopf „Online stellen“ (Peter 3.11.2026): Domain bei All-Inkl. Die Seiten,
+	 * die mitgehen, legt der Mac mini fest (KIAPP online_stellen.py, SEITEN).
+	 */
+	online?: { domain: string };
 }
 
 export type RequestStatus =

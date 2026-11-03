@@ -53,10 +53,36 @@ Alle Pfade unter `/api/websi/`, Antworten als JSON.
 | POST | `hinweise/pruefen` | Monatsprüfung sofort ausführen |
 | GET | `usage` | Kontingent je KI und Actions-Minuten |
 | PUT | `usage/limits` | Richtwerte pro Tag `{ claude: 25, codex: 25, ollama: null }` |
+| GET | `sites/:id/online` | Knopf „Online stellen“: neueste Fassung, offener Auftrag, letzte Rückmeldung |
+| POST | `sites/:id/online` | Online stellen (nur Peter, nie über Token oder MCP), siehe unten |
 | POST | `mcp` | MCP-Brücke (JSON-RPC), siehe unten |
 
 Aktionen auf einen Wunsch eines Sammelauftrags antworten mit dem Wunsch und
 `related`: allen mitgeänderten Wünschen.
+
+## Online stellen
+
+Peter 3.11.2026 (Anleitung „Websites online stellen“, C1–C4): Im Editor steht
+bei Websites mit `online: { domain }` im Profil der Knopf „Online stellen“.
+Er fragt „Wirklich online stellen?“ und zeigt die neueste Fassung (Stand von
+`main` mit letzter Änderung und Cloudflare-Bau).
+
+- **Auftrag:** WEBSI legt im Repo der Website ein Issue mit Label
+  `online-stellen` an. Im Text steht unsichtbar
+  `<!-- websi-online:{"site","commit","zeit","sig"} -->`. `sig` ist
+  HMAC-SHA256 mit `MCP_TOKEN` über `websi-online|site|commit|zeit`
+  (`core/online.ts`). Liegt schon ein offener Auftrag für die Website, legt
+  WEBSI keinen zweiten an.
+- **Ausführen:** der Mac mini (KIAPP `online_stellen.py`, im WEBSI-Durchgang
+  alle 10 Minuten). Er prüft die Unterschrift (höchstens 24 Stunden alt),
+  wartet auf den grünen Cloudflare-Bau, holt die Seiten aus der Werkstatt und
+  lädt sie per FTP mit TLS zu All-Inkl. Der WEBSI-Helfer reagiert nur auf das
+  Label `websi` und kennt den Schlüssel nicht.
+- **Rückmeldung:** Kommentar mit `<!-- websi-online-ergebnis:{"ok","zeit",…} -->`,
+  dann ist das Issue zu. WEBSI zeigt „Online seit …“ oder den Grund.
+- **Nur Peter:** Wer mit Token kommt (Paco, MCP), bekommt den Knopf gar nicht
+  erst (`worker/index.ts`); MCP hat kein Werkzeug dafür. Ohne `MCP_TOKEN`
+  zeigt WEBSI „Noch nicht eingerichtet“.
 
 ## MCP-Brücke
 

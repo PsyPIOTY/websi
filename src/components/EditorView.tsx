@@ -11,6 +11,7 @@ import { api, type SiteData, withRelated } from "../api";
 import { draftNames } from "../drafts";
 import { store } from "../local";
 import { EngineSelect } from "./EngineSelect";
+import { OnlineButton } from "./OnlineButton";
 import { StatusChip } from "./StatusChip";
 
 type Device = "handy" | "tablet" | "desktop";
@@ -272,6 +273,7 @@ export function EditorView({
 					>
 						Website öffnen
 					</a>
+					<OnlineButton profile={profile} />
 					<button
 						type="button"
 						className="editor__sheet-toggle"
