@@ -1,7 +1,7 @@
 # WEBSI einrichten
 
 Einmalig, zusammen mit Paco im Thread, etwa eine Stunde. Du meldest dich nur
-an und fügst einen Schlüssel ein. Den Rest machen
+an und fügst zwei Schlüssel ein. Den Rest machen
 [`scripts/einrichten-macbook.sh`](../scripts/einrichten-macbook.sh) und Paco.
 
 | Teil | Gerät | Dauer |
@@ -37,6 +37,12 @@ Zugangsschutz, und WEBSI bleibt für alle gesperrt.
      „Repository access“ „Only select repositories“ und
      psychologe-konzeptstudio wählen, unten „Generate token“, den Schlüssel
      kopieren und im Terminal einfügen.
+   - **Cloudflare-Leseschlüssel:** Die Seite öffnet sich mit dem Recht
+     „Account Analytics: Read“. Unten „Continue to summary“, „Create Token“,
+     „Copy“ und im Terminal einfügen. Der Schlüssel kann nur lesen. Damit
+     zeigt der Kostenwächter, wie viel vom Gratis-Kontingent bei Cloudflare
+     verbraucht ist, und später zählt WEBSI damit die Besucher. Nur Enter
+     überspringt ihn; dann zählt der Kostenwächter nur Claude und GitHub.
    - **Zugangsschutz:** Bei websi den Reiter „Access“, dann „Protect this
      Worker behind Access“, „All traffic“, „Cloudflare account“ und
      „Apply Access“. Fragt Cloudflare nach einem Teamnamen: z. B.
@@ -112,9 +118,10 @@ abschalten.
 ## Später: Hinweise einschalten
 
 Erst wenn die Praxisseite bei All-Inkl online ist, nicht am Termin. Vorher
-gibt es nichts zu melden. Dann braucht es zwei Lese-Schlüssel (MacBook, etwa
-15 Minuten, Paco führt dich): einen bei Cloudflare für die Besucherzahlen,
-einen bei Google für Search Console. Danach meldet sich WEBSI nur, wenn etwas
+gibt es nichts zu melden. Dann braucht es noch einen Lese-Schlüssel bei Google
+für Search Console (MacBook, etwa 10 Minuten, Paco führt dich). Den
+Cloudflare-Schlüssel für die Besucherzahlen hat das Skript in Teil 1 schon
+hinterlegt. Danach meldet sich WEBSI nur, wenn etwas
 zu tun ist: kaputter Link, Google-Platz deutlich gefallen oder viel weniger
 Besucher.
 
@@ -125,3 +132,8 @@ Zugangsschlüssel, legt ihn in seinem Schlüsselbund ab und gibt ihn WEBSI
 einmal „Allow“ bei Cloudflare und in Zero Trust eine Ausnahme („Bypass“) für
 die Pfade `/api/websi/mcp` und `/api/websi/hinweise`. Paco sagt die Klicks an,
 das Token schützt die beiden Pfade.
+
+Danach ruft Paco einmal `websi_verbindungstest` auf und ab dann täglich. Das
+ist das Lebenszeichen: Bleibt es länger als 26 Stunden aus, zeigt WEBSI oben
+Rot. Schlägt der Aufruf fehl, zeigt Paco auf seiner Seite Rot und sagt dir
+Bescheid. So merkt jede Seite, wenn die Verbindung abreißt.

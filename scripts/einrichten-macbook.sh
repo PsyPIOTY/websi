@@ -1,7 +1,7 @@
 #!/bin/bash
 # WEBSI einrichten, einmalig am MacBook (etwa 15 Minuten).
-# Du meldest dich nur bei Cloudflare und GitHub an und fügst den
-# GitHub-Schlüssel ein. Alles andere macht dieses Skript.
+# Du meldest dich nur bei Cloudflare und GitHub an und fügst zwei
+# Schlüssel ein (GitHub, Cloudflare-Lesen). Alles andere macht dieses Skript.
 #
 # Start: Terminal öffnen (Spotlight: „Terminal“) und diese Zeile einfügen:
 #   curl -fsSL https://raw.githubusercontent.com/PsyPIOTY/websi/main/scripts/einrichten-macbook.sh -o /tmp/websi.sh && bash /tmp/websi.sh
@@ -18,8 +18,10 @@ REF="${WEBSI_REF:-main}"
 BASIS="${WEBSI_HOME:-$HOME/.websi}"
 REPO="PsyPIOTY/websi"
 WEBSITE_REPO="PsyPIOTY/psychologe-konzeptstudio"
+# Cloudflare-Schlüssel nur mit „Account Analytics: Read“: Kostenwächter und Besucherzahlen.
+CF_TOKEN_SEITE='https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22account_analytics%22%2C%22type%22%3A%22read%22%7D%5D&name=WEBSI%20Lesen&accountId=*&zoneId=all'
 TOKEN_SEITE="https://github.com/settings/personal-access-tokens/new?name=WEBSI&description=WEBSI%3A%20W%C3%BCnsche%20als%20Issues%2C%20Vorschl%C3%A4ge%20als%20Pull%20Requests&target_name=PsyPIOTY&expires_in=366&contents=write&issues=write&pull_requests=write"
-SCHRITTE=5
+SCHRITTE=6
 SCHRITT=0
 TMP="$(mktemp -d)"
 exec 3<"${WEBSI_EINGABE:-/dev/tty}"
@@ -88,6 +90,14 @@ installiere_node() {
 	PATH="/usr/local/bin:$PATH"
 	hash -r
 	node_passt
+}
+
+# Status eines Cloudflare-Schlüssels („active“), ohne ihn in eine Datei zu schreiben.
+cf_status() {
+	printf 'header = "Authorization: Bearer %s"\n' "$1" |
+		curl -s -K - "https://api.cloudflare.com/client/v4/$2/tokens/verify" |
+		node -e 'let t = ""; process.stdin.on("data", (c) => (t += c)).on("end", () => {
+try { process.stdout.write(JSON.parse(t).result?.status || ""); } catch {} });' || true
 }
 
 # Leitet Access die Adresse auf die Anmeldung um, steht dort der Teamname.
@@ -204,6 +214,40 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+schritt "Lese-Schlüssel für Kostenwächter und Besucherzahlen"
+# Nur lesen: Damit zeigt WEBSI, wie viel von Cloudflares Gratis-Kontingent
+# verbraucht ist, und zählt später die Besucher. Ändern kann der Schlüssel nichts.
+NEU=ja
+if [ "$(json "$TMP/geheim.json" 'd.some((s) => s.name === "CF_ANALYTICS_TOKEN")')" = true ]; then
+	frage "Der Cloudflare-Leseschlüssel ist schon hinterlegt. Neu eingeben? j = ja, Enter = nein:"
+	case "$ANTWORT" in j | J | ja | Ja) ;; *) NEU=nein ;; esac
+fi
+if [ "$NEU" = ja ]; then
+	open "$CF_TOKEN_SEITE"
+	sag "Im Browser ist Cloudflare offen, das Recht „Account Analytics: Read“ ist schon gewählt:"
+	sag "  (Fehlt es: bei „Permissions“ „Account“, „Account Analytics“, „Read“ wählen.)"
+	sag "  1. Ganz unten „Continue to summary“, dann „Create Token“."
+	sag "  2. Den Schlüssel mit „Copy“ kopieren."
+	while :; do
+		geheim "Schlüssel hier einfügen (Cmd+V, du siehst dabei nichts), dann Enter. Nur Enter = später:"
+		if [ -z "$ANTWORT" ]; then
+			sag "Übersprungen. Der Kostenwächter zählt dann nur Claude und GitHub. Später: dieselbe Zeile noch einmal."
+			break
+		fi
+		STATUS="$(cf_status "$ANTWORT" "accounts/$KONTO")"
+		[ "$STATUS" = active ] || STATUS="$(cf_status "$ANTWORT" user)"
+		if [ "$STATUS" = active ]; then
+			CFT="$ANTWORT" KONTO="$KONTO" node -e 'process.stdout.write(JSON.stringify(
+			{ CF_ANALYTICS_TOKEN: process.env.CFT, CF_ACCOUNT_ID: process.env.KONTO }));' |
+				W secret bulk --name websi >/dev/null
+			sag "Gespeichert. Der Kostenwächter zeigt jetzt auch Cloudflare."
+			break
+		fi
+		sag "Cloudflare nimmt den Schlüssel nicht an. Bitte noch einmal kopieren und einfügen."
+	done
+fi
+
+# ---------------------------------------------------------------------------
 schritt "Zugangsschutz einschalten"
 if access_team; then
 	sag "Der Zugangsschutz ist schon an."
@@ -235,7 +279,8 @@ printf '%s' "$TEAM" | W secret put ACCESS_TEAM_DOMAIN --name websi >/dev/null
 FUER_PACO="WEBSI: $ADRESSE
 Datenbank websi: $DB
 Access-Team: $TEAM
-Anmeldung: $MAIL"
+Anmeldung: $MAIL
+Verbindung: nach dem Verbinden websi_verbindungstest einmal aufrufen, danach täglich; schlägt er fehl, bei Paco Rot zeigen und Peter Bescheid geben."
 fett "Fertig. WEBSI läuft: $ADRESSE"
 open "$ADRESSE"
 sag "Im Browser öffnet sich WEBSI. Melde dich mit deinem Cloudflare-Zugang an ($MAIL)."
