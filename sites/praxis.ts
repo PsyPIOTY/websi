@@ -55,6 +55,7 @@ export const praxis: SiteProfile = {
 		{ id: "11880", name: "11880", url: "https://www.11880.com" },
 		{ id: "gelbe-seiten", name: "Gelbe Seiten", url: "https://www.gelbeseiten.de" },
 	],
+	online: { domain: "peterjarek.de" },
 	notes:
 		"Konzept 09 ist Basis. Endergebnis wird eine Mischung aus 04 Verbunden, 08 Sicherer Hafen und 09; gute Elemente an die richtigen Stellen bringen.",
 };

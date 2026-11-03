@@ -12,6 +12,7 @@ import {
 	type EngineId,
 	isEngine,
 } from "../core/engines";
+import type { OnlineStatus } from "../core/online";
 import { type PacoContact, pacoLink } from "../core/paco";
 import {
 	addEvent,
@@ -55,6 +56,11 @@ export interface ApiDeps {
 	runMonitor?: () => Promise<unknown>;
 	/** MCP_TOKEN gesetzt: die Brücke zu Paco ist eingerichtet. */
 	pacoConfigured?: boolean;
+	/** Knopf „Online stellen“ (worker/online.ts); fehlt er, zeigt WEBSI „nicht eingerichtet“. */
+	online?: {
+		status: (site: SiteProfile) => Promise<OnlineStatus>;
+		start: (site: SiteProfile) => Promise<OnlineStatus>;
+	};
 	/** Cloudflare-Verbrauch heute; refresh false = nur Zwischenspeicher. */
 	cloudflare?: (
 		refresh: boolean,
@@ -374,6 +380,29 @@ export function createApi(deps: ApiDeps) {
 					})),
 					adapter: { id: adapter.id, label: adapter.label },
 				});
+			}
+
+			// Online stellen: nur über Peters Anmeldung (Access), nie über MCP oder Token.
+			if (parts[0] === "sites" && parts.length === 3 && parts[2] === "online") {
+				const s = site(parts[1]);
+				if (!s?.online) return fail("Website unbekannt", 404);
+				if (method !== "GET" && method !== "POST")
+					return fail("Nicht gefunden", 404);
+				if (!deps.online)
+					return json({
+						domain: s.online.domain,
+						ready: false,
+						reason: "Online stellen ist in WEBSI nicht eingerichtet.",
+						stand: null,
+						pending: null,
+						last: null,
+						lastOnline: null,
+					} satisfies OnlineStatus);
+				return json(
+					method === "POST"
+						? await deps.online.start(s)
+						: await deps.online.status(s),
+				);
 			}
 
 			if (parts[0] === "requests" && parts.length === 1) {

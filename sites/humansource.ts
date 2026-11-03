@@ -4,11 +4,11 @@ export const humansource: SiteProfile = {
 	id: "humansource",
 	name: "humansourcebusiness",
 	stage: "entwurf",
-	// Noch im alten Cloudflare-Konto; zieht um, sobald der Proxy (Konzeptstudio SETUP.md 7a)
-	// in Peters Konto läuft.
-	url: "https://humansource.peter-jarek.workers.dev",
-	editorPath: "/",
-	pages: ["/"],
+	// Seit 3.11.2026 direkt aus dem Konzeptstudio in Peters Cloudflare-Konto (wie die
+	// Praxisseite); der alte Proxy im früheren Konto zeigte einen veralteten Stand.
+	url: "https://konzeptstudio.kib-community.workers.dev",
+	editorPath: "/business",
+	pages: ["/business"],
 	repo: {
 		owner: "PsyPIOTY",
 		name: "psychologe-konzeptstudio",
@@ -32,11 +32,11 @@ export const humansource: SiteProfile = {
 		region: "Bad Belzig",
 		postalCode: "14806",
 		keywords: [
-			{ phrase: "Führungskräfte-Coaching", page: "/" },
-			{ phrase: "Change-Management", page: "/" },
-			{ phrase: "Organisationsentwicklung", page: "/" },
-			{ phrase: "Mediation im Unternehmen", page: "/" },
-			{ phrase: "Team-Workshops", page: "/" },
+			{ phrase: "Führungskräfte-Coaching", page: "/business" },
+			{ phrase: "Change-Management", page: "/business" },
+			{ phrase: "Organisationsentwicklung", page: "/business" },
+			{ phrase: "Mediation im Unternehmen", page: "/business" },
+			{ phrase: "Team-Workshops", page: "/business" },
 		],
 		schemaTypes: ["ProfessionalService", "Person"],
 		googleBusinessProfile: false,
@@ -47,5 +47,6 @@ export const humansource: SiteProfile = {
 		{ id: "apple", name: "Apple Business Connect", url: "https://businessconnect.apple.com" },
 		{ id: "linkedin", name: "LinkedIn Unternehmensseite", url: "https://www.linkedin.com/company/setup/new/" },
 	],
+	online: { domain: "humansourcebusiness.de" },
 	notes: "Entwurf unter /business im Konzeptstudio-Repo. Vorbilder: Strategy&, Oliver Wyman, PwC.",
 };

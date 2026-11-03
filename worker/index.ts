@@ -4,6 +4,7 @@ import { createApi } from "./api";
 import { cloudflareUsage } from "./costs";
 import { handleMcp } from "./mcp";
 import { type MonitorEnv, runMonitor } from "./monitor";
+import { createOnline } from "./online";
 import { markContact } from "./paco";
 import { belongsToPreview, proxyRequest } from "./proxy";
 import { D1Store } from "./storage";
@@ -68,6 +69,8 @@ export default {
 			runMonitor: () => runMonitor({ store, sites: siteProfiles, env }, true),
 			cloudflare: (refresh) => cloudflareUsage({ store, env }, refresh),
 			pacoConfigured: Boolean(env.MCP_TOKEN),
+			// Wer mit Token kommt (Paco, MCP), kommt nie an den Knopf: nur Peters Anmeldung.
+			online: viaToken ? undefined : createOnline(env),
 		});
 		if (isMcp) return handleMcp(request, api.handle);
 		const response = await api.handle(request);

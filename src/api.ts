@@ -1,4 +1,5 @@
 import type { EngineId, EngineInfo } from "../core/engines";
+import type { OnlineStatus } from "../core/online";
 import type { PacoLink } from "../core/paco";
 import type {
 	ChangeRequest,
@@ -112,6 +113,9 @@ export const api = {
 			method: "POST",
 			body: JSON.stringify({ text, remember }),
 		}),
+	online: (siteId: string) => call<OnlineStatus>(`sites/${siteId}/online`),
+	goOnline: (siteId: string) =>
+		call<OnlineStatus>(`sites/${siteId}/online`, { method: "POST" }),
 	style: (siteId: string) => call<StyleData>(`style/${siteId}`),
 	addStyle: (
 		siteId: string,

@@ -481,6 +481,92 @@ fieldset.filters {
 	bottom: 84px;
 }
 
+/* Online stellen (Knopf in der Werkzeugleiste, Dialog) */
+.online__open {
+	white-space: nowrap;
+}
+
+.online {
+	position: fixed;
+	inset: 0;
+	z-index: 70;
+	display: grid;
+	place-items: center;
+	padding: 16px;
+	background: rgb(29 36 51 / 35%);
+}
+
+.online__card {
+	width: min(460px, 100%);
+	max-height: calc(100dvh - 32px);
+	overflow: auto;
+	background: var(--card);
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	box-shadow: 0 12px 32px rgb(29 36 51 / 18%);
+	padding: 16px 20px 20px;
+}
+
+.online__head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.online__head h2 {
+	margin: 0;
+	font-size: 18px;
+	overflow-wrap: anywhere;
+}
+
+.online__facts {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 6px 14px;
+	margin: 14px 0;
+}
+
+.online__facts dt {
+	color: var(--ink-2);
+}
+
+.online__facts dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.online__hint {
+	display: block;
+	color: var(--warn);
+	font-size: 14px;
+}
+
+.online__note {
+	margin: 10px 0;
+	padding: 10px 12px;
+	border-radius: 8px;
+	background: var(--accent-soft);
+}
+
+.online__note--bad {
+	background: #fbecea;
+	color: var(--bad);
+}
+
+.online__actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	margin: 14px 0 8px;
+}
+
+.online__ask {
+	font-weight: 600;
+	margin-right: 4px;
+}
+
 /* Auftrags-Detail */
 .drawer {
 	position: fixed;
