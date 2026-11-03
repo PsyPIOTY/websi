@@ -166,6 +166,13 @@ export const TOOLS: Tool[] = [
 		call: () => ({ method: "POST", path: "hinweise/pruefen" }),
 	},
 	{
+		name: "websi_verbindungstest",
+		description:
+			"Prüft die Verbindung zu WEBSI. Beim Einrichten einmal aufrufen, danach mindestens täglich als Lebenszeichen: Bleibt es länger als 26 Stunden aus, zeigt WEBSI Rot. Schlägt der Aufruf fehl, ist die Verbindung unterbrochen; dann Peter Bescheid geben.",
+		inputSchema: obj({}),
+		call: () => ({ method: "GET", path: "verbindung" }),
+	},
+	{
 		name: "websi_usage",
 		description:
 			"Kontingent: Läufe je Modell heute und Actions-Minuten im Monat.",

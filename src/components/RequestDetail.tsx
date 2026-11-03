@@ -10,6 +10,8 @@ import {
 	WHOLE_PAGE,
 } from "../../core/types";
 import { type ActionResult, api, withRelated } from "../api";
+import { draftNames } from "../drafts";
+import { DraftsView } from "./DraftsView";
 import { EngineSelect } from "./EngineSelect";
 import { StatusChip } from "./StatusChip";
 
@@ -52,6 +54,8 @@ export function RequestDetail({
 	const [reason, setReason] = useState("");
 	const [rememberReason, setRememberReason] = useState(true);
 	const [sendEngine, setSendEngine] = useState<EngineId>(r.engine ?? engine);
+	const [sendMulti, setSendMulti] = useState(false);
+	const [showDrafts, setShowDrafts] = useState(false);
 	const panel = useRef<HTMLDivElement>(null);
 	const titleId = useId();
 	const followId = useId();
@@ -91,6 +95,12 @@ export function RequestDetail({
 	};
 
 	const active = r.status === "in_arbeit" || r.status === "vorschlag";
+	const drafts = r.external?.chosen ? [] : (r.external?.drafts ?? []);
+	const picking = r.status === "vorschlag" && drafts.length > 0;
+	const choose = (branch: string) =>
+		run("choose", () => api.choose(r.id, branch)).then(
+			(ok) => ok && setShowDrafts(false),
+		);
 
 	return (
 		<div
@@ -165,7 +175,46 @@ export function RequestDetail({
 						</a>
 					)}
 				</div>
-				{(r.status === "vorschlag" || r.status === "veroeffentlicht") &&
+				{picking && (
+					<div className="draft-box">
+						<p>
+							<strong>{drafts.length} Entwürfe liegen bereit.</strong> Nimm
+							einen, die anderen werden verworfen.
+						</p>
+						<button
+							type="button"
+							className="btn btn--primary"
+							onClick={() => setShowDrafts(true)}
+						>
+							Entwürfe ansehen und wählen
+						</button>
+						<span className="send-row">
+							{drafts.map((d) => (
+								<button
+									key={d.branch}
+									type="button"
+									className="btn btn--small"
+									disabled={!!busy}
+									onClick={() => choose(d.branch)}
+								>
+									„{d.name}“ nehmen
+								</button>
+							))}
+						</span>
+					</div>
+				)}
+				{showDrafts && picking && (
+					<DraftsView
+						request={r}
+						profile={profile}
+						drafts={drafts}
+						busy={!!busy}
+						onChoose={(d) => choose(d.branch)}
+						onClose={() => setShowDrafts(false)}
+					/>
+				)}
+				{!picking &&
+					(r.status === "vorschlag" || r.status === "veroeffentlicht") &&
 					r.external?.previewUrl && (
 						<button
 							type="button"
@@ -190,12 +239,23 @@ export function RequestDetail({
 								disabled={!!busy}
 								onClick={() =>
 									run("send", () =>
-										api.action(r.id, "send", { engine: sendEngine }),
+										api.action(r.id, "send", {
+											engine: sendEngine,
+											drafts: sendMulti ? draftNames() : undefined,
+										}),
 									)
 								}
 							>
 								{busy === "send" ? "Wird gesendet …" : "Einzeln senden"}
 							</button>
+							<label className="check">
+								<input
+									type="checkbox"
+									checked={sendMulti}
+									onChange={(e) => setSendMulti(e.target.checked)}
+								/>
+								{draftNames().length} Entwürfe
+							</label>
 						</span>
 					)}
 					{active && (
@@ -209,6 +269,7 @@ export function RequestDetail({
 						</button>
 					)}
 					{r.status === "vorschlag" &&
+						!picking &&
 						(confirm ? (
 							<span className="confirm">
 								<span>Wirklich live stellen?</span>
@@ -317,7 +378,7 @@ export function RequestDetail({
 					</form>
 				)}
 
-				{active && (
+				{active && !picking && (
 					<form
 						className="followup"
 						onSubmit={(e) => {

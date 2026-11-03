@@ -147,8 +147,13 @@ input {
 	background: var(--ok);
 }
 
-.agent-pill--test .agent-pill__dot {
+.agent-pill--test .agent-pill__dot,
+.agent-pill--paco-wartet .agent-pill__dot {
 	background: var(--warn);
+}
+
+.agent-pill--paco-getrennt .agent-pill__dot {
+	background: var(--bad);
 }
 
 .main {
@@ -1555,5 +1560,144 @@ fieldset.filters {
 @media (prefers-reduced-motion: reduce) {
 	* {
 		transition: none !important;
+	}
+}
+
+/* Mehrere Entwürfe */
+.drafts {
+	position: fixed;
+	inset: 0;
+	z-index: 60;
+	background: var(--paper);
+	display: flex;
+	flex-direction: column;
+}
+
+.drafts__row {
+	--screen-w: 300px;
+	--scale: 0.77;
+	flex: 1;
+	min-height: 0;
+	list-style: none;
+	margin: 0;
+	padding: 16px;
+	display: flex;
+	gap: 16px;
+	justify-content: center;
+	overflow-x: auto;
+	scroll-snap-type: x mandatory;
+	background: var(--paper-2);
+}
+
+.drafts__card {
+	flex: 0 0 var(--screen-w);
+	scroll-snap-align: center;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	min-height: 0;
+}
+
+.drafts__card-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.drafts__card-head h3 {
+	margin: 0;
+	font-size: 16px;
+}
+
+.drafts__screen {
+	flex: 1;
+	min-height: 0;
+	position: relative;
+	overflow: hidden;
+	background: #fff;
+	border-radius: 12px;
+	box-shadow: 0 0 0 1px var(--line);
+}
+
+.drafts__screen iframe {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 390px;
+	height: calc(100% / var(--scale));
+	border: 0;
+	transform: scale(var(--scale));
+	transform-origin: 0 0;
+}
+
+.drafts__empty {
+	flex: 1;
+	margin: 0;
+	padding: 16px;
+	background: var(--card);
+	border-radius: 12px;
+	box-shadow: 0 0 0 1px var(--line);
+}
+
+.drafts__links {
+	display: flex;
+	gap: 12px;
+	margin: 0;
+}
+
+.draft-box {
+	display: grid;
+	gap: 8px;
+	padding: 12px;
+	border-radius: 10px;
+	background: var(--paper-2);
+	margin: 0 0 12px;
+}
+
+.draft-box p {
+	margin: 0;
+}
+
+@media (max-width: 700px) {
+	.drafts__row {
+		--screen-w: calc(100vw - 64px);
+		justify-content: flex-start;
+	}
+}
+
+.usage__cf {
+	display: grid;
+	gap: 4px;
+	margin-top: 6px;
+}
+
+.usage__safety {
+	margin-top: 12px;
+}
+
+.usage__safety summary {
+	cursor: pointer;
+	font-weight: 600;
+	font-size: 14px;
+}
+
+.usage__safety ul {
+	margin: 8px 0 0;
+	padding-left: 18px;
+	display: grid;
+	gap: 6px;
+}
+
+@media (max-width: 700px) {
+	/* Am Handy über die ganze Breite, sonst ragt das Fenster links hinaus. */
+	.usage__panel {
+		position: fixed;
+		left: 16px;
+		right: 16px;
+		top: calc(var(--topbar) + 8px);
+		width: auto;
+		max-height: calc(100dvh - var(--topbar) - 24px);
+		overflow-y: auto;
 	}
 }

@@ -320,3 +320,126 @@ describe("Vorschau über Cloudflare Workers Builds", () => {
 		expect(pickPreviewUrl(`https://${host}`, humansource)).toBeUndefined();
 	});
 });
+
+describe("Mehrere Entwürfe über GitHub", () => {
+	const draftsMeta = {
+		engine: "claude",
+		seconds: 300,
+		where: "github",
+		runs: 3,
+		drafts: [
+			{
+				name: "knapp",
+				branch: "websi/issue-60-entwurf-knapp",
+				url: "https://github.com/x/pull/11",
+				preview: "https://websi-60-1-humansource.peter-jarek.workers.dev",
+			},
+			{
+				name: "mutig",
+				branch: "websi/issue-60-entwurf-mutig",
+				url: "https://github.com/x/pull/12",
+			},
+		],
+	};
+	const base = () => ({
+		...createRequest(
+			{
+				siteId: "humansource",
+				sectionId: "situation",
+				text: "x",
+				pagePath: "/",
+			},
+			"r1",
+			"t",
+		),
+		status: "in_arbeit" as const,
+		drafts: ["knapp", "mutig"],
+		external: { adapter: "github-claude", id: "60", url: "" },
+	});
+
+	it("meldet die Entwürfe mit Vorschau und zählt jeden Lauf", async () => {
+		const gh = fakeGitHub({
+			[`GET ${repo}/issues/60/comments`]: [
+				{
+					html_url: "c1",
+					created_at: "t1",
+					body: `<!-- websi-worker ${JSON.stringify(draftsMeta)} -->\n**2 Entwürfe fertig.**`,
+					user: { login: "github-actions[bot]", type: "Bot" },
+				},
+			],
+			[`GET ${repo}/commits/websi%2Fissue-60-entwurf-mutig/check-runs`]: {
+				check_runs: [],
+			},
+			[`GET ${repo}/commits/websi%2Fissue-60-entwurf-mutig/statuses`]: [],
+		});
+		const update = await new GitHubClaudeAdapter("t", gh.fetcher).sync(
+			base(),
+			ctx,
+		);
+		expect(update.status).toBe("vorschlag");
+		expect(update.drafts).toEqual([
+			{
+				name: "knapp",
+				branch: "websi/issue-60-entwurf-knapp",
+				proposalUrl: "https://github.com/x/pull/11",
+				previewUrl: "https://websi-60-1-humansource.peter-jarek.workers.dev",
+			},
+			{
+				name: "mutig",
+				branch: "websi/issue-60-entwurf-mutig",
+				proposalUrl: "https://github.com/x/pull/12",
+				previewUrl: undefined,
+			},
+		]);
+		expect(update.messages[0].usage?.runs).toBe(3);
+	});
+
+	it("schließt bei der Wahl die anderen Entwürfe und löscht ihre Branches", async () => {
+		const pull = (number: number, ref: string) => ({
+			number,
+			html_url: `https://github.com/x/pull/${number}`,
+			state: "open",
+			merged_at: null,
+			body: "",
+			head: { ref },
+		});
+		const gh = fakeGitHub({
+			[`GET ${repo}/pulls`]: [
+				pull(11, "websi/issue-60-entwurf-knapp"),
+				pull(12, "websi/issue-60-entwurf-mutig"),
+			],
+			[`PATCH ${repo}/pulls/11`]: {},
+			[`DELETE ${repo}/git/refs/heads/websi/issue-60-entwurf-knapp`]: {},
+			[`POST ${repo}/issues/60/comments`]: {},
+		});
+		const r = {
+			...base(),
+			external: {
+				...base().external,
+				drafts: draftsMeta.drafts.map((d) => ({
+					name: d.name,
+					branch: d.branch,
+					proposalUrl: d.url,
+				})),
+			},
+		};
+		await new GitHubClaudeAdapter("t", gh.fetcher).choose(r, ctx, {
+			name: "mutig",
+			branch: "websi/issue-60-entwurf-mutig",
+			proposalUrl: "https://github.com/x/pull/12",
+		});
+		const calls = gh.calls.map(
+			(c) =>
+				`${c.method} ${c.url.replace("https://api.github.com", "").split("?")[0]}`,
+		);
+		expect(calls).toContain(`PATCH ${repo}/pulls/11`);
+		expect(calls).not.toContain(`PATCH ${repo}/pulls/12`);
+		expect(calls).toContain(
+			`DELETE ${repo}/git/refs/heads/websi/issue-60-entwurf-knapp`,
+		);
+		const comment = gh.calls.find((c) => c.url.endsWith("/issues/60/comments"));
+		expect((comment?.body as { body: string }).body).toContain(
+			'<!-- websi-worker {"chosen":"websi/issue-60-entwurf-mutig"} -->',
+		);
+	});
+});

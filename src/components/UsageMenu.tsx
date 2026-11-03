@@ -20,14 +20,16 @@ export function UsageMenu({
 	const panelId = useId();
 	const box = useRef<HTMLDivElement>(null);
 	const main = usage.engines.find((e) => e.id === "claude") ?? usage.engines[0];
-	const worst = [
+	const cf = usage.cloudflare;
+	const cfRows = cf && "rows" in cf ? cf.rows : [];
+	const levels = [
 		...usage.engines.map((e) => e.level),
 		usage.github.level,
-	].includes("erreicht")
+		...cfRows.map((r) => r.level),
+	];
+	const worst = levels.includes("erreicht")
 		? "erreicht"
-		: [...usage.engines.map((e) => e.level), usage.github.level].includes(
-					"knapp",
-				)
+		: levels.includes("knapp")
 			? "knapp"
 			: "ok";
 
@@ -72,10 +74,11 @@ export function UsageMenu({
 			</button>
 			{open && (
 				<div className="usage__panel" id={panelId}>
-					<h2>Kontingent</h2>
+					<h2>Kostenwächter</h2>
 					<p className="muted small">
-						Das Abo verrät sein Limit nicht. WEBSI zählt, was es losschickt, und
-						warnt ab 80 % deines Richtwerts.
+						WEBSI zählt alles, was Geld kosten könnte, warnt ab 80 % und schickt
+						bei 100 % nichts mehr los. Das Abo verrät sein Limit nicht, darum
+						gilt dort dein Richtwert.
 					</p>
 					<table className="usage__table">
 						<thead>
@@ -125,6 +128,61 @@ export function UsageMenu({
 							Frei für private Repos. Zählt nur Läufe des Workers in GitHub.
 						</p>
 					</div>
+					<div className="usage__minutes">
+						<div className="usage__minutes-head">
+							<span>Cloudflare heute (frei)</span>
+						</div>
+						{cf === null || cf === undefined ? (
+							<p className="muted small">
+								Erscheint, sobald der Lese-Schlüssel für die Hinweise
+								eingetragen ist.
+							</p>
+						) : "error" in cf ? (
+							<p className="muted small">Nicht abrufbar: {cf.error}</p>
+						) : (
+							cfRows.map((r) => (
+								<div key={r.id} className="usage__cf">
+									<div className="usage__minutes-head">
+										<span className="small">{r.label}</span>
+										<strong className="small">
+											{r.used.toLocaleString("de-DE")} /{" "}
+											{r.free.toLocaleString("de-DE")}
+										</strong>
+									</div>
+									<div className="meter" aria-hidden="true">
+										<span
+											className={`meter__fill meter__fill--${r.level}`}
+											style={{
+												width: `${Math.min(100, (r.used / r.free) * 100)}%`,
+											}}
+										/>
+									</div>
+								</div>
+							))
+						)}
+					</div>
+					<details className="usage__safety">
+						<summary>Was sonst Geld kosten könnte</summary>
+						<ul className="small">
+							<li>
+								GitHub: Ausgabenlimit für Actions auf 0 € lassen (Settings →
+								Billing). Dann stoppt GitHub bei 2.000 Minuten, statt zu
+								berechnen.
+							</li>
+							<li>
+								Claude: Im Konto keine bezahlte Zusatznutzung einschalten. Dann
+								wartet Claude am Abo-Limit, statt zu berechnen.
+							</li>
+							<li>
+								Cloudflare: Beim Plan „Free“ bleiben. Workers und Datenbank
+								stoppen an der freien Grenze, statt zu berechnen.
+							</li>
+							<li>
+								Zero Trust: Plan „Free“ gilt bis 50 Personen, du bist einer. Die
+								hinterlegte Zahlungsart wird dabei nicht belastet.
+							</li>
+						</ul>
+					</details>
 				</div>
 			)}
 		</div>

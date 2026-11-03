@@ -4,6 +4,7 @@
  * KI-Betriebssystem) dieselben Typen lesen und schreiben können.
  */
 
+import type { Draft } from "./drafts";
 import type { EngineId } from "./engines";
 
 /** Ein Abschnitt einer Website, unter dem Änderungswünsche hängen. */
@@ -114,6 +115,8 @@ export interface RunUsage {
 	seconds: number;
 	/** "github" (Actions-Minuten) oder "lokal". */
 	where: string;
+	/** Modell-Läufe in diesem Durchgang (mehrere Entwürfe zählen mehrfach). */
+	runs?: number;
 }
 
 /** Ein Auftrag: ein Änderungswunsch zu genau einem Abschnitt. */
@@ -129,6 +132,8 @@ export interface ChangeRequest {
 	engine?: EngineId;
 	/** Gemeinsamer Sammelauftrag: alle Wünsche mit gleicher batchId gehen zusammen. */
 	batchId?: string;
+	/** Richtungen für mehrere Entwürfe zur Auswahl; leer = ein Vorschlag. */
+	drafts?: string[];
 	status: RequestStatus;
 	createdAt: string;
 	updatedAt: string;
@@ -141,6 +146,10 @@ export interface ChangeRequest {
 		/** Vorschau-Adresse des Vorschlags (eigene Testversion der Website). */
 		previewUrl?: string;
 		branch?: string;
+		/** Fertige Entwürfe, solange Peter noch keinen gewählt hat. */
+		drafts?: Draft[];
+		/** Branch des gewählten Entwurfs. */
+		chosen?: string;
 	};
 	events: RequestEvent[];
 }

@@ -1,3 +1,4 @@
+import type { Draft } from "../drafts";
 import type { ChangeRequest } from "../types";
 import type {
 	AgentAdapter,
@@ -35,6 +36,32 @@ export class TestModeAdapter implements AgentAdapter {
 		);
 		if (lastProposal > lastFollowUp)
 			return { status: "unveraendert", messages: [] };
+		const names = request.external?.chosen ? [] : (request.drafts ?? []);
+		if (names.length) {
+			// Ohne echte Vorschau zeigen alle Entwürfe die Website selbst.
+			const drafts: Draft[] = names.map((name) => ({
+				name,
+				branch: `testmodus/entwurf-${name}`,
+				proposalUrl: ctx.pageUrl,
+				previewUrl: ctx.site.url,
+			}));
+			return {
+				status: "vorschlag",
+				messages: [
+					{
+						at: new Date().toISOString(),
+						usage: {
+							engine: request.engine ?? "claude",
+							seconds: 0,
+							where: "test",
+							runs: names.length,
+						},
+						text: `Testmodus: Für „${ctx.section.label}“ lägen jetzt ${names.length} Entwürfe bereit (${names.join(", ")}).`,
+					},
+				],
+				drafts,
+			};
+		}
 		return {
 			status: "vorschlag",
 			messages: [
@@ -61,4 +88,6 @@ export class TestModeAdapter implements AgentAdapter {
 	}
 
 	async discard() {}
+
+	async choose() {}
 }

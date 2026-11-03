@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	buildPrompt,
 	decide,
+	draftNames,
 	type Engine,
 	findBranch,
 	findPreviewUrl,
@@ -156,6 +157,14 @@ describe("Hilfsfunktionen", () => {
 		).toBe("https://websi-3-praxis.p.workers.dev");
 	});
 
+	it("nimmt höchstens drei verschiedene Richtungen, eine allein ist kein Entwurf", () => {
+		expect(
+			draftNames({ drafts: ["knapp", " knapp ", "mutig", "x", "y"] }),
+		).toEqual(["knapp", "mutig", "x"]);
+		expect(draftNames({ drafts: ["knapp"] })).toEqual([]);
+		expect(draftNames({})).toEqual([]);
+	});
+
 	it("liest Suchbegriffe aus dem Selektor", () => {
 		expect(selectorTokens(body).tokens).toEqual(["faq"]);
 		expect(
@@ -285,6 +294,52 @@ describe("Ablauf mit echtem Git", () => {
 		expect(readFileSync(join(work, "faq.txt"), "utf8")).toBe("Lange Frage\n");
 		expect(posted).toHaveLength(1);
 		expect(posted[0].body.body).toContain("bleibt rot");
+	});
+
+	it("baut drei Entwürfe auf eigenen Branches und meldet sie in einem Kommentar", async () => {
+		const { remote, work, g } = setup();
+		const { gh, posted } = fakeGitHub();
+		const prompts: string[] = [];
+		const engine: Engine = {
+			id: "fake",
+			async run({ cwd, prompt }) {
+				prompts.push(prompt);
+				const dir = prompt.match(/Richtung dieses Entwurfs: (\S+)/)?.[1];
+				writeFileSync(join(cwd, "faq.txt"), `Frage ${dir}\n`);
+				return `Fassung ${dir}.`;
+			},
+		};
+		const original = issue.body;
+		try {
+			issue.body = `${body}\n<!-- websi:{"drafts":["knapp","ausführlich","mutig"]} -->`;
+			process.env.WEBSI_CHECK = "-";
+			const result = await handleIssue(7, {
+				gh,
+				engine,
+				cwd: work,
+				log: () => {},
+			});
+			expect(result.kind).toBe("entwuerfe");
+			expect(prompts).toHaveLength(3);
+			expect(prompts[1]).toContain("Richtung dieses Entwurfs: ausführlich");
+			for (const [b, text] of [
+				["websi/issue-7-entwurf-knapp", "Frage knapp\n"],
+				["websi/issue-7-entwurf-ausfuehrlich", "Frage ausführlich\n"],
+				["websi/issue-7-entwurf-mutig", "Frage mutig\n"],
+			])
+				expect(g(["show", `${b}:faq.txt`], remote)).toBe(text);
+			expect(posted.filter((p) => p.path === "/pulls")).toHaveLength(3);
+			const comments = posted.filter((p) => p.path === "/issues/7/comments");
+			expect(comments).toHaveLength(1);
+			expect(comments[0].body.body).toContain("3 Entwürfe fertig");
+			expect(comments[0].body.body).toContain('"runs":3');
+			expect(comments[0].body.body).toContain(
+				'"branch":"websi/issue-7-entwurf-mutig"',
+			);
+		} finally {
+			issue.body = original;
+			delete process.env.WEBSI_CHECK;
+		}
 	});
 
 	it("übernimmt in GitHub erst Wünsche, die seit 24 Stunden warten", async () => {

@@ -64,6 +64,8 @@ export function isWorkerComment(c: GhComment) {
 export function taskMeta(body: string | null): {
 	engine?: string;
 	requestIds?: string[];
+	/** Richtungen für mehrere Entwürfe zur Auswahl, z. B. ["knapp", "ausführlich", "mutig"]. */
+	drafts?: string[];
 } {
 	const all = [...(body ?? "").matchAll(/<!-- websi:(\{.*?\}) -->/g)];
 	const last = all.at(-1);
@@ -75,11 +77,21 @@ export function taskMeta(body: string | null): {
 	}
 }
 
+export interface DraftMeta {
+	name: string;
+	branch: string;
+	url: string;
+	preview?: string;
+}
+
 export interface RunMeta {
 	engine: string;
 	seconds: number;
 	where: string;
 	preview?: string;
+	/** Anzahl der Modell-Läufe (mehrere Entwürfe kosten mehrfach). */
+	runs?: number;
+	drafts?: DraftMeta[];
 }
 
 /** Markierung für Worker-Kommentare, mit Laufdaten für WEBSI (Kontingent, Vorschau). */
@@ -185,6 +197,25 @@ export function branchFor(issue: GhIssue) {
 	return `websi/issue-${issue.number}-${slug(issue.title)}`;
 }
 
+/** Branch eines Entwurfs, z. B. websi/issue-12-entwurf-knapp. */
+export function draftBranch(issue: GhIssue, name: string) {
+	return `websi/issue-${issue.number}-entwurf-${slug(name).slice(0, 20)}`;
+}
+
+/** Bis zu drei verschiedene, nicht leere Richtungen; weniger als zwei = ein normaler Vorschlag. */
+export function draftNames(meta: { drafts?: unknown }) {
+	const list = Array.isArray(meta.drafts) ? meta.drafts : [];
+	const names = [
+		...new Set(
+			list
+				.filter((d): d is string => typeof d === "string")
+				.map((d) => d.trim().slice(0, 40))
+				.filter(Boolean),
+		),
+	].slice(0, 3);
+	return names.length >= 2 ? names : [];
+}
+
 export function findBranch(names: string[], n: number) {
 	return names.find((name) =>
 		BRANCH_PREFIXES.some((p) => name.startsWith(`${p}${n}-`)),
@@ -195,6 +226,7 @@ export function buildPrompt(
 	issue: GhIssue,
 	followUps: string[],
 	check: string | null,
+	direction?: string,
 ) {
 	const parts = [
 		"Du arbeitest im Repository dieser Website und setzt einen WEBSI-Auftrag von Peter um.",
@@ -208,6 +240,13 @@ export function buildPrompt(
 			"",
 			"# Nachbesserung von Peter (hat Vorrang)",
 			...followUps.map((f) => `- ${f.replace(/\n/g, "\n  ")}`),
+		);
+	}
+	if (direction) {
+		parts.push(
+			"",
+			`# Richtung dieses Entwurfs: ${direction}`,
+			`Peter bekommt mehrere Entwürfe zur Auswahl. Setze den Wunsch klar erkennbar in der Richtung „${direction}“ um. Die anderen Richtungen entstehen getrennt, nicht hier.`,
 		);
 	}
 	parts.push(
@@ -568,87 +607,102 @@ export async function handleIssue(n: number, opts: Options) {
 	if (git(["status", "--porcelain"], cwd))
 		throw new Error("Arbeitskopie hat ungespeicherte Änderungen.");
 	const base = process.env.WEBSI_BASE ?? (await gh.defaultBranch());
-	const branch = work.kind === "nachbessern" ? work.branch : branchFor(issue);
-	const from = work.kind === "nachbessern" ? branch : base;
-	git(["fetch", "origin", from], cwd);
-	git(["checkout", "-B", branch, `origin/${from}`], cwd);
-	log(`#${n}: ${work.kind} auf ${branch} mit ${engine.id}`);
-
 	const started = Date.now();
-	const meta = (preview?: string): RunMeta => ({
+	const meta = (extra: Partial<RunMeta> = {}): RunMeta => ({
 		engine: engine.id,
 		seconds: Math.round((Date.now() - started) / 1000),
 		where,
-		...(preview ? { preview } : {}),
+		...extra,
 	});
-	const check = checkCommand(cwd);
-	try {
-		let summary = await engine.run({
-			prompt: buildPrompt(issue, work.followUps, check),
-			cwd,
+	const names = work.kind === "neu" ? draftNames(taskMeta(issue.body)) : [];
+	const run = (
+		branch: string,
+		from: string,
+		alias: string,
+		direction?: string,
+	) =>
+		attempt({
+			...opts,
+			engine,
 			issue,
+			work,
+			base,
+			branch,
+			from,
+			alias,
+			direction,
+			log,
 		});
-		if (!git(["status", "--porcelain"], cwd)) {
+
+	try {
+		if (names.length) {
+			// Mehrere Entwürfe: je Richtung ein eigener Branch mit eigenem Vorschlag.
+			const drafts: DraftMeta[] = [];
+			const failed: string[] = [];
+			for (const [i, name] of names.entries()) {
+				log(`#${n}: Entwurf ${i + 1}/${names.length} „${name}“`);
+				const r = await run(
+					draftBranch(issue, name),
+					base,
+					`${previewAlias(n)}-${i + 1}`,
+					name,
+				);
+				if (r.kind === "vorschlag")
+					drafts.push({
+						name,
+						branch: r.branch,
+						url: r.url,
+						preview: r.preview,
+					});
+				else failed.push(`„${name}“: ${r.reason}`);
+			}
+			const lines = drafts.map(
+				(d) =>
+					`- **${d.name}:** ${d.url}${d.preview ? ` · Vorschau: ${d.preview}` : ""}`,
+			);
+			if (!drafts.length) {
+				await gh.comment(
+					n,
+					`**Kein Entwurf gelungen.**\n\n${failed.map((f) => `- ${f}`).join("\n")}\n\nSchreib hier, wie es weitergehen soll, dann versuche ich es erneut.`,
+					meta({ runs: names.length }),
+				);
+				return { kind: "pruefung-rot" as const };
+			}
 			await gh.comment(
 				n,
-				`**Keine Änderung nötig oder möglich.**\n\n${summary}\n\nSchreib hier eine Präzisierung, dann versuche ich es erneut.`,
+				`**${drafts.length} Entwürfe fertig.** Wähle in WEBSI einen aus, die anderen werden dann verworfen.\n\n${lines.join("\n")}${failed.length ? `\n\nNicht gelungen:\n${failed.map((f) => `- ${f}`).join("\n")}` : ""}`,
+				meta({ runs: names.length, drafts }),
+			);
+			log(`#${n}: ${drafts.length} Entwürfe`);
+			return { kind: "entwuerfe" as const, drafts };
+		}
+
+		const branch = work.kind === "nachbessern" ? work.branch : branchFor(issue);
+		const from = work.kind === "nachbessern" ? branch : base;
+		const r = await run(branch, from, previewAlias(n));
+		if (r.kind === "ohne-aenderung") {
+			await gh.comment(
+				n,
+				`**Keine Änderung nötig oder möglich.**\n\n${r.summary}\n\nSchreib hier eine Präzisierung, dann versuche ich es erneut.`,
 				meta(),
 			);
 			return { kind: "ohne-aenderung" as const };
 		}
-		if (check) {
-			let result = runCheck(check, cwd);
-			if (!result.ok) {
-				log(`#${n}: Prüfung rot, zweiter Versuch`);
-				summary = await engine.run({
-					prompt: `Die Prüfung \`${check}\` schlägt nach deiner Änderung fehl:\n\n${tail(result.output)}\n\nBehebe das, ohne den Auftrag zu verlassen. Antworte danach mit 2–4 Sätzen auf Deutsch.`,
-					cwd,
-					issue,
-				});
-				result = runCheck(check, cwd);
-			}
-			if (!result.ok) {
-				await gh.comment(
-					n,
-					`**Kein Vorschlag:** \`${check}\` bleibt rot. Nichts wurde hochgeladen.\n\n\`\`\`\n${tail(result.output, 1500)}\n\`\`\`\n\nSchreib hier, wie es weitergehen soll, dann versuche ich es erneut.`,
-					meta(),
-				);
-				git(["reset", "--hard"], cwd);
-				git(["clean", "-fd"], cwd);
-				return { kind: "pruefung-rot" as const };
-			}
+		if (r.kind === "pruefung-rot") {
+			await gh.comment(
+				n,
+				`**Kein Vorschlag:** ${r.reason}. Nichts wurde hochgeladen.\n\n\`\`\`\n${tail(r.output, 1500)}\n\`\`\`\n\nSchreib hier, wie es weitergehen soll, dann versuche ich es erneut.`,
+				meta(),
+			);
+			return { kind: "pruefung-rot" as const };
 		}
-
-		git(["add", "-A"], cwd);
-		git(
-			[
-				"-c",
-				`user.name=${process.env.WEBSI_GIT_NAME ?? "WEBSI-Worker"}`,
-				"-c",
-				`user.email=${process.env.WEBSI_GIT_EMAIL ?? "41898282+github-actions[bot]@users.noreply.github.com"}`,
-				"commit",
-				"-m",
-				`WEBSI #${n}: ${issue.title.replace(/^\[WEBSI\]\s*/i, "")}`,
-				"-m",
-				summary,
-			],
-			cwd,
-		);
-		git(["push", "-u", "origin", branch], cwd);
-		const preview = buildPreview(n, cwd, log);
-		const url = await gh.ensurePull(
-			branch,
-			base,
-			`WEBSI: ${issue.title.replace(/^\[WEBSI\]\s*/i, "")}`,
-			`${summary}\n\n${preview ? `Vorschau: ${preview}\n\n` : ""}Closes #${n}\n\nVorschlag vom WEBSI-Worker (${engine.id}). Nicht mergen: Peter veröffentlicht in WEBSI.`,
-		);
 		await gh.comment(
 			n,
-			`**${work.kind === "nachbessern" ? "Nachgebessert" : "Vorschlag fertig"}.** ${summary}\n\nVorschlag: ${url}${preview ? `\nVorschau: ${preview}` : ""}`,
-			meta(preview),
+			`**${work.kind === "nachbessern" ? "Nachgebessert" : "Vorschlag fertig"}.** ${r.summary}\n\nVorschlag: ${r.url}${r.preview ? `\nVorschau: ${r.preview}` : ""}`,
+			meta(r.preview ? { preview: r.preview } : {}),
 		);
-		log(`#${n}: Vorschlag ${url}`);
-		return { kind: "vorschlag" as const, url, preview };
+		log(`#${n}: Vorschlag ${r.url}`);
+		return { kind: "vorschlag" as const, url: r.url, preview: r.preview };
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		await gh
@@ -662,20 +716,114 @@ export async function handleIssue(n: number, opts: Options) {
 	}
 }
 
+type Attempt =
+	| {
+			kind: "vorschlag";
+			branch: string;
+			url: string;
+			preview?: string;
+			summary: string;
+	  }
+	| { kind: "ohne-aenderung"; summary: string; reason: string }
+	| { kind: "pruefung-rot"; reason: string; output: string };
+
+/**
+ * Ein Durchgang auf einem Branch: Modell ändert, Prüfung (mit einem zweiten
+ * Versuch), Commit, Push, Vorschau, Pull Request. Bei Rot bleibt nichts liegen.
+ */
+async function attempt(a: {
+	gh: GitHub;
+	engine: Engine;
+	cwd: string;
+	issue: GhIssue;
+	work: Exclude<Work, { kind: "nichts" }>;
+	base: string;
+	branch: string;
+	from: string;
+	alias: string;
+	direction?: string;
+	log: (line: string) => void;
+}): Promise<Attempt> {
+	const { gh, engine, cwd, issue, branch, log } = a;
+	const n = issue.number;
+	const title = issue.title.replace(/^\[WEBSI\]\s*/i, "");
+	git(["fetch", "origin", a.from], cwd);
+	git(["checkout", "-B", branch, `origin/${a.from}`], cwd);
+	log(`#${n}: ${a.work.kind} auf ${branch} mit ${engine.id}`);
+	const reset = () => {
+		git(["reset", "--hard"], cwd);
+		git(["clean", "-fd"], cwd);
+	};
+
+	const check = checkCommand(cwd);
+	let summary = await engine.run({
+		prompt: buildPrompt(issue, a.work.followUps, check, a.direction),
+		cwd,
+		issue,
+	});
+	if (!git(["status", "--porcelain"], cwd))
+		return { kind: "ohne-aenderung", summary, reason: "keine Änderung" };
+	if (check) {
+		let result = runCheck(check, cwd);
+		if (!result.ok) {
+			log(`#${n}: Prüfung rot, zweiter Versuch`);
+			summary = await engine.run({
+				prompt: `Die Prüfung \`${check}\` schlägt nach deiner Änderung fehl:\n\n${tail(result.output)}\n\nBehebe das, ohne den Auftrag zu verlassen. Antworte danach mit 2–4 Sätzen auf Deutsch.`,
+				cwd,
+				issue,
+			});
+			result = runCheck(check, cwd);
+		}
+		if (!result.ok) {
+			reset();
+			return {
+				kind: "pruefung-rot",
+				reason: `\`${check}\` bleibt rot`,
+				output: result.output,
+			};
+		}
+	}
+
+	git(["add", "-A"], cwd);
+	git(
+		[
+			"-c",
+			`user.name=${process.env.WEBSI_GIT_NAME ?? "WEBSI-Worker"}`,
+			"-c",
+			`user.email=${process.env.WEBSI_GIT_EMAIL ?? "41898282+github-actions[bot]@users.noreply.github.com"}`,
+			"commit",
+			"-m",
+			`WEBSI #${n}: ${title}${a.direction ? ` (Entwurf ${a.direction})` : ""}`,
+			"-m",
+			summary,
+		],
+		cwd,
+	);
+	git(["push", "-u", "origin", branch], cwd);
+	const preview = buildPreview(a.alias, cwd, log);
+	const url = await gh.ensurePull(
+		branch,
+		a.base,
+		`WEBSI: ${a.direction ? `[Entwurf ${a.direction}] ` : ""}${title}`,
+		`${summary}\n\n${preview ? `Vorschau: ${preview}\n\n` : ""}${a.direction ? `Entwurf „${a.direction}“ zu #${n}. Peter wählt in WEBSI einen Entwurf aus.` : `Closes #${n}`}\n\nVorschlag vom WEBSI-Worker (${engine.id}). Nicht mergen: Peter veröffentlicht in WEBSI.`,
+	);
+	return { kind: "vorschlag", branch, url, preview, summary };
+}
+
 /**
  * Optionale Vorschau: WEBSI_PREVIEW_CMD baut eine Testversion der Website,
  * z. B. `npm run build && npx wrangler versions upload --preview-alias {alias}`.
  * Die ausgegebene Adresse landet im Vorschlag. Fehler hier halten nichts auf.
  */
-function buildPreview(n: number, cwd: string, log: (line: string) => void) {
+function buildPreview(alias: string, cwd: string, log: (line: string) => void) {
 	const cmd = process.env.WEBSI_PREVIEW_CMD;
 	if (!cmd) return undefined;
-	const result = runCheck(cmd.replaceAll("{alias}", previewAlias(n)), cwd);
+	const result = runCheck(cmd.replaceAll("{alias}", alias), cwd);
 	const url = result.ok ? findPreviewUrl(result.output) : undefined;
 	log(
 		url
-			? `#${n}: Vorschau ${url}`
-			: `#${n}: keine Vorschau (${tail(result.output, 300)})`,
+			? `${alias}: Vorschau ${url}`
+			: `${alias}: keine Vorschau (${tail(result.output, 300)})`,
 	);
 	return url;
 }

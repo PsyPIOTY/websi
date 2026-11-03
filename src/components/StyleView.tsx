@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useId, useState } from "react";
+import { DEFAULT_DRAFTS, normalizeDrafts } from "../../core/drafts";
 import { ALL_SITES, type SiteProfile, type StyleRule } from "../../core/types";
 import { api, type StyleData } from "../api";
+import { draftNames, saveDraftNames } from "../drafts";
 
 const sourceText: Record<StyleRule["source"], string> = {
 	peter: "von dir",
@@ -150,6 +152,8 @@ export function StyleView({ profile }: { profile: SiteProfile }) {
 				))}
 			</ul>
 
+			<DraftDirections />
+
 			{data && data.suggestions.length > 0 && (
 				<>
 					<h2 className="section-title">Vorschläge aus deinen Aufträgen</h2>
@@ -177,5 +181,51 @@ export function StyleView({ profile }: { profile: SiteProfile }) {
 				</>
 			)}
 		</section>
+	);
+}
+
+/** Richtungen für „Entwürfe zur Auswahl“: zwei oder drei, frei benennbar. */
+function DraftDirections() {
+	const [names, setNames] = useState(() => {
+		const list = draftNames();
+		return [...list, "", ""].slice(0, 3);
+	});
+	const [saved, setSaved] = useState(false);
+	const valid = normalizeDrafts(names);
+	return (
+		<form
+			className="style-add"
+			onSubmit={(e) => {
+				e.preventDefault();
+				if (!valid.length) return;
+				saveDraftNames(valid);
+				setSaved(true);
+			}}
+		>
+			<h2 className="section-title">Richtungen für mehrere Entwürfe</h2>
+			<p className="muted small">
+				Mit „Entwürfe“ im Editor setzt der Worker einen Wunsch in diesen
+				Richtungen um, du wählst eine. Jede Richtung kostet einen Lauf.
+			</p>
+			<div className="style-add__row">
+				{names.map((n, i) => (
+					<input
+						// biome-ignore lint/suspicious/noArrayIndexKey: feste drei Felder
+						key={i}
+						aria-label={`Richtung ${i + 1}`}
+						value={n}
+						maxLength={40}
+						placeholder={i < 2 ? DEFAULT_DRAFTS[i] : "optional"}
+						onChange={(e) => {
+							setSaved(false);
+							setNames(names.map((x, j) => (j === i ? e.target.value : x)));
+						}}
+					/>
+				))}
+				<button type="submit" className="btn" disabled={!valid.length}>
+					{saved ? "Gemerkt" : "Merken"}
+				</button>
+			</div>
+		</form>
 	);
 }
