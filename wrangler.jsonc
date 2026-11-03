@@ -3,7 +3,10 @@
 	"name": "websi",
 	"main": "worker/index.ts",
 	"compatibility_date": "2026-07-29",
-	"compatibility_flags": ["nodejs_compat"],
+	// global_fetch_strictly_public: WEBSI holt die Seiten wie ein Besucher aus dem Internet ab.
+	// Ohne das blockt Cloudflare den Abruf eines Workers im selben Konto (Fehler 1042),
+	// z. B. konzeptstudio.<name>.workers.dev und seine Vorschau-Links.
+	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 	"assets": {
 		"binding": "ASSETS",
 		"not_found_handling": "single-page-application",
