@@ -6,7 +6,8 @@ export const praxis: SiteProfile = {
 	id: "praxis",
 	name: "Praxis Peter Jarek",
 	stage: "entwurf",
-	url: "https://konzeptstudio.peter-jarek.workers.dev",
+	// Seit 3.11.2026 in Peters eigenem Cloudflare-Konto (Workers Builds, Vorschau-Links).
+	url: "https://konzeptstudio.kib-community.workers.dev",
 	// Konzept 09 „Das erste Gespräch“ ist die Basis; Elemente aus 04 und 08 kommen dazu.
 	// /praxis zeigt es ohne Konzeptstudio und liefert den ganzen Inhalt im HTML aus.
 	editorPath: "/praxis",

@@ -13,7 +13,7 @@
 		{
 			"binding": "DB",
 			"database_name": "websi",
-			"database_id": "00000000-0000-0000-0000-000000000000",
+			"database_id": "e89e2c8f-8bae-4c87-84ee-bbc7484a6407",
 			"migrations_dir": "migrations"
 		}
 	],
