@@ -134,7 +134,7 @@ function OnlineDialog({
 									? `seit ${fmt(st.lastOnline.at)}`
 									: "noch nie über WEBSI"}
 							</dd>
-							<dt>Neueste Fassung</dt>
+							<dt>Letzte Änderung hier</dt>
 							<dd>
 								{stand ? (
 									<>

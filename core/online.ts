@@ -38,7 +38,7 @@ export interface OnlineStatus {
 	/** Knopf nutzbar: GitHub-Zugang und WEBSI-Schlüssel sind da. */
 	ready: boolean;
 	reason?: string;
-	/** Neueste Fassung (main) mit Zeit und letzter Änderung. */
+	/** Neueste Fassung: commit = Stand von main (wird hochgeladen); Zeit und Text = letzte Änderung an dieser Website. */
 	stand: {
 		commit: string;
 		at: string;
