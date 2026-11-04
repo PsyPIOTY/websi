@@ -15,6 +15,8 @@ import { createOnline } from "../worker/online";
 import { MemoryStore } from "../worker/storage";
 
 const praxis = siteProfiles.find((s) => s.id === "praxis");
+const humansource = siteProfiles.find((s) => s.id === "humansource");
+if (!humansource) throw new Error("humansource fehlt");
 if (!praxis) throw new Error("praxis fehlt");
 const REPO = "https://api.github.com/repos/PsyPIOTY/psychologe-konzeptstudio";
 const NOW = new Date("2026-11-03T18:00:00.000Z");
@@ -47,6 +49,20 @@ function github(
 					committer: { date: "2026-11-03T17:36:00Z" },
 				},
 			});
+		if (url.startsWith(`${REPO}/commits?sha=main&path=`))
+			return ok(
+				url.includes("studio%2Fframes")
+					? [
+							{
+								sha: "praxis111",
+								commit: {
+									message: "Praxis: Foto in der Einleitung",
+									committer: { date: "2026-11-03T12:00:00Z" },
+								},
+							},
+						]
+					: [],
+			);
 		if (url.startsWith(`${REPO}/commits/abc1234def5678/check-runs`))
 			return ok({
 				check_runs: [{ name: "Workers Builds: konzeptstudio", ...build }],
@@ -119,12 +135,20 @@ describe("Online stellen: Stand und Auftrag", () => {
 		).status(praxis);
 		expect(st.ready).toBe(false);
 		expect(st.reason).toContain("gemeinsamen Schlüssel");
+		// Hochgeladen wird main (commit), gezeigt wird die letzte Änderung an dieser Website.
 		expect(st.stand).toEqual({
 			commit: "abc1234def5678",
-			at: "2026-11-03T17:36:00Z",
-			message: "Beide Seiten fertig",
+			at: "2026-11-03T12:00:00Z",
+			message: "Praxis: Foto in der Einleitung",
 			build: "fertig",
 		});
+	});
+
+	it("ohne eigene Änderung bleibt die letzte Änderung der Werkstatt stehen", async () => {
+		const { fetcher } = github();
+		const st = await createOnline(env, fetcher, () => NOW).status(humansource);
+		expect(st.stand?.message).toBe("Beide Seiten fertig");
+		expect(st.stand?.commit).toBe("abc1234def5678");
 	});
 
 	it("meldet einen offenen Auftrag nur für diese Website", async () => {

@@ -78,6 +78,20 @@ export function createOnline(
 			sha: string;
 			commit: { message: string; committer: { date: string } };
 		}>(`${repo(s)}/commits/${s.repo.baseBranch}`);
+		// Beide Websites teilen sich die Werkstatt: angezeigt wird die letzte Änderung an
+		// dieser Website (Peter 4.11.2026, „da ist noch irgendwas vermischt“), hochgeladen
+		// wird immer der neueste Stand von main.
+		let eigene = head;
+		if (s.repo.path) {
+			try {
+				const liste = await gh<(typeof head)[]>(
+					`${repo(s)}/commits?sha=${s.repo.baseBranch}&path=${encodeURIComponent(s.repo.path)}&per_page=1`,
+				);
+				if (liste[0]) eigene = liste[0];
+			} catch {
+				// Ohne Verlauf bleibt die letzte Änderung der Werkstatt stehen.
+			}
+		}
 		let build: BuildState = "unbekannt";
 		try {
 			const { check_runs } = await gh<{
@@ -99,8 +113,8 @@ export function createOnline(
 		}
 		return {
 			commit: head.sha,
-			at: head.commit.committer.date,
-			message: head.commit.message.split("\n")[0].slice(0, 140),
+			at: eigene.commit.committer.date,
+			message: eigene.commit.message.split("\n")[0].slice(0, 140),
 			build,
 		};
 	}
