@@ -5,6 +5,7 @@ import {
 	type EngineInfo,
 	engineLabel,
 } from "../../core/engines";
+import type { Idea } from "../../core/ideen";
 import { summarizeBySection } from "../../core/requests";
 import { type ChangeRequest, WHOLE_PAGE } from "../../core/types";
 import { api, type SiteData, withRelated } from "../api";
@@ -370,6 +371,14 @@ export function EditorView({
 					open={bySection[WHOLE_PAGE.id] ?? []}
 					onOpen={onOpen}
 				/>
+				<Ideas
+					siteId={profile.id}
+					siteName={profile.name}
+					onCreated={(r) => {
+						onCreated(r);
+						setToast(`Idee als Wunsch gesammelt: ${profile.name}`);
+					}}
+				/>
 			</aside>
 			{sheet && (
 				<button
@@ -514,5 +523,119 @@ function WholePage({
 				{collect ? "Sammeln" : "Senden"}
 			</button>
 		</form>
+	);
+}
+
+/** Ideen von fremden Websites (Peter 15.11.2026): kommen von Paco, Peter übernimmt sie für die aktive Website. */
+function Ideas({
+	siteId,
+	siteName,
+	onCreated,
+}: {
+	siteId: string;
+	siteName: string;
+	onCreated: (r: ChangeRequest) => void;
+}) {
+	const [ideas, setIdeas] = useState<Idea[] | null>(null);
+	const [error, setError] = useState<string | null>(null);
+	const [busy, setBusy] = useState<string | null>(null);
+	useEffect(() => {
+		api
+			.ideas()
+			.then(setIdeas)
+			.catch((e: Error) => setError(e.message));
+	}, []);
+	const fresh = (ideas ?? []).filter((i) => i.status === "neu").length;
+	const act = async (id: string, run: () => Promise<Idea>) => {
+		setBusy(id);
+		setError(null);
+		try {
+			const next = await run();
+			setIdeas((list) =>
+				(list ?? [])
+					.map((i) => (i.id === id ? next : i))
+					.filter((i) => i.status !== "erledigt"),
+			);
+		} catch (e) {
+			setError((e as Error).message);
+		} finally {
+			setBusy(null);
+		}
+	};
+	return (
+		<details className="ideas" open={fresh > 0}>
+			<summary>
+				Ideen von fremden Seiten
+				{fresh > 0 && <span className="sections__count">{fresh}</span>}
+			</summary>
+			<p className="muted small">
+				Schick dem WEBSI-Bot ein Foto oder einen Link und schreib „Idee“ dazu.
+				Nur als Anregung, kopiert wird nichts.
+			</p>
+			{error && <p className="small ideas__error">{error}</p>}
+			{ideas === null && !error && (
+				<p className="muted small">Wird geladen …</p>
+			)}
+			{ideas?.length === 0 && <p className="muted small">Noch keine Ideen.</p>}
+			<ul className="ideas__list">
+				{ideas?.map((i) => (
+					<li key={i.id} className="ideas__item">
+						{i.bild && (
+							<a
+								href={`/api/websi/ideen/${i.id}/bild`}
+								target="_blank"
+								rel="noreferrer"
+							>
+								<img
+									src={`/api/websi/ideen/${i.id}/bild`}
+									alt="Foto der Idee"
+									loading="lazy"
+								/>
+							</a>
+						)}
+						<p className="ideas__text">{i.text || "Foto ohne Text"}</p>
+						{i.link && (
+							<a
+								className="small ideas__link"
+								href={i.link}
+								target="_blank"
+								rel="noreferrer noopener"
+							>
+								{new URL(i.link).hostname}
+							</a>
+						)}
+						<p className="muted small">
+							{new Date(i.createdAt).toLocaleDateString("de-DE")}
+							{i.status === "uebernommen" &&
+								` · als Wunsch bei ${i.siteId === siteId ? siteName : i.siteId}`}
+						</p>
+						<div className="ideas__actions">
+							<button
+								type="button"
+								className="btn btn--primary"
+								disabled={busy === i.id}
+								onClick={() =>
+									act(i.id, async () => {
+										const { idea, request } = await api.takeIdea(i.id, siteId);
+										onCreated(request);
+										return idea;
+									})
+								}
+							>
+								Als Wunsch für {siteName}
+							</button>
+							<button
+								type="button"
+								className="btn"
+								disabled={busy === i.id}
+								onClick={() => act(i.id, () => api.doneIdea(i.id))}
+							>
+								Erledigt
+							</button>
+						</div>
+					</li>
+				))}
+			</ul>
+		</details>
 	);
 }

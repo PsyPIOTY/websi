@@ -13,6 +13,11 @@ Sammelauftrag** an die gewählte KI (Claude, Codex oder lokales Modell). Wer
 lieber einzeln schickt, schaltet „Sammeln“ aus. Status, Antworten und Vorschlag
 erscheinen direkt am Abschnitt und im Auftragsverlauf.
 
+**Ideen von fremden Seiten.** Foto oder Link mit „Idee“ an den WEBSI-Bot:
+Paco reicht sie weiter, im Editor stehen sie in der Ecke „Ideen“. Ein Klick
+macht daraus einen gesammelten Wunsch für die aktive Website, nur als
+Anregung.
+
 **Vorschau und Vorher/Nachher.** Jeder Vorschlag kann eine eigene Testversion
 der Website bekommen. WEBSI legt Live-Fassung und Vorschlag übereinander; ein
 Schieber zeigt den Unterschied, beide scrollen gemeinsam. „Veröffentlichen“

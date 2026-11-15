@@ -1,4 +1,5 @@
 import type { EngineId, EngineInfo } from "../core/engines";
+import type { Idea } from "../core/ideen";
 import type { OnlineStatus } from "../core/online";
 import type { PacoLink } from "../core/paco";
 import type {
@@ -62,6 +63,14 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+	ideas: () => call<Idea[]>("ideen"),
+	takeIdea: (id: string, siteId: string) =>
+		call<{ idea: Idea; request: ChangeRequest }>(`ideen/${id}/uebernehmen`, {
+			method: "POST",
+			body: JSON.stringify({ siteId }),
+		}),
+	doneIdea: (id: string) =>
+		call<Idea>(`ideen/${id}/erledigt`, { method: "POST" }),
 	status: () => call<StatusInfo>("status"),
 	sites: () => call<SiteSummary[]>("sites"),
 	site: (id: string) => call<SiteData>(`sites/${id}`),

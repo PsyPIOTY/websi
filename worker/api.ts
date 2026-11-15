@@ -12,6 +12,7 @@ import {
 	type EngineId,
 	isEngine,
 } from "../core/engines";
+import { type Idea, IdeaError, ideaToWish, validateIdea } from "../core/ideen";
 import type { OnlineStatus } from "../core/online";
 import { type PacoContact, pacoLink } from "../core/paco";
 import {
@@ -700,6 +701,81 @@ export function createApi(deps: ApiDeps) {
 				return json(limits);
 			}
 
+			// Ideen von fremden Websites: Paco legt sie über die MCP-Brücke ab, Peter übernimmt sie im Editor.
+			if (parts[0] === "ideen" && parts.length === 1) {
+				if (method === "GET") return json(await deps.store.listIdeas());
+				if (method === "POST") {
+					const input = validateIdea(await body());
+					if (input.quelle) {
+						const known = await deps.store.findIdeaBySource(input.quelle);
+						if (known) return json({ ...known, schonDa: true });
+					}
+					const at = now();
+					const idea: Idea = {
+						id: uuid(),
+						text: input.text,
+						link: input.link,
+						bild: input.bild?.type,
+						quelle: input.quelle,
+						status: "neu",
+						createdAt: at,
+						updatedAt: at,
+					};
+					await deps.store.putIdea(idea, input.bild);
+					return json(idea, 201);
+				}
+			}
+
+			if (parts[0] === "ideen" && parts.length === 3 && parts[2] === "bild") {
+				if (method !== "GET") return fail("Nicht gefunden", 404);
+				const bild = await deps.store.getIdeaImage(parts[1]);
+				if (!bild) return fail("Kein Foto", 404);
+				const bytes = Uint8Array.from(atob(bild.data), (c) => c.charCodeAt(0));
+				return new Response(bytes, {
+					headers: {
+						"content-type": bild.type,
+						"cache-control": "private, max-age=86400",
+						"x-content-type-options": "nosniff",
+					},
+				});
+			}
+
+			// Übernehmen: wird ein gesammelter Wunsch „ganze Seite“ der gewählten Website. Erledigt: verschwindet.
+			if (parts[0] === "ideen" && parts.length === 3 && method === "POST") {
+				const idea = await deps.store.getIdea(parts[1]);
+				if (!idea) return fail("Idee unbekannt", 404);
+				if (parts[2] === "erledigt") {
+					const done: Idea = { ...idea, status: "erledigt", updatedAt: now() };
+					await deps.store.putIdea(done);
+					return json(done);
+				}
+				if (parts[2] === "uebernehmen") {
+					const s = site(String((await body()).siteId ?? ""));
+					if (!s) return fail("Website unbekannt", 404);
+					const r = createRequest(
+						validateNewRequest({
+							siteId: s.id,
+							sectionId: WHOLE_PAGE.id,
+							text: ideaToWish(idea),
+							pagePath: s.editorPath,
+						}),
+						uuid(),
+						now(),
+					);
+					await deps.store.putRequest(r);
+					const taken: Idea = {
+						...idea,
+						status: "uebernommen",
+						siteId: s.id,
+						requestId: r.id,
+						updatedAt: now(),
+					};
+					await deps.store.putIdea(taken);
+					return json({ idea: taken, request: r });
+				}
+				return fail("Nicht gefunden", 404);
+			}
+
 			if (
 				parts[0] === "visibility" &&
 				parts[2] === "scan" &&
@@ -756,7 +832,8 @@ export function createApi(deps: ApiDeps) {
 
 			return fail("Nicht gefunden", 404);
 		} catch (e) {
-			if (e instanceof RequestError) return fail(e.message, 400);
+			if (e instanceof RequestError || e instanceof IdeaError)
+				return fail(e.message, 400);
 			return fail((e as Error).message || "Fehler", 502);
 		}
 	}

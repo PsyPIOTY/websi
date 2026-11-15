@@ -173,6 +173,29 @@ export const TOOLS: Tool[] = [
 		call: () => ({ method: "GET", path: "verbindung" }),
 	},
 	{
+		name: "websi_idee_ablegen",
+		description:
+			"Legt eine Idee von einer fremden Website in WEBSI ab (Ecke „Ideen“ im Editor). Text und/oder Foto; Foto als data:image/jpeg;base64,… (höchstens etwa 1 MB). quelle = Dateiname bei Paco, damit dieselbe Idee nur einmal ankommt. Nur Anregung, nichts wird übernommen, bis Peter es im Editor tut.",
+		inputSchema: obj({
+			text: str("Peters Text zur Idee, oft mit Link"),
+			link: str("Link zur fremden Seite, falls nicht im Text"),
+			bild: str("Foto als data:-URL (JPEG, PNG oder WebP)"),
+			quelle: str("Dateiname bei Paco, z. B. telegram-websi-12.jpg"),
+		}),
+		call: (a) => ({
+			method: "POST",
+			path: "ideen",
+			body: { text: a.text, link: a.link, bild: a.bild, quelle: a.quelle },
+		}),
+	},
+	{
+		name: "websi_ideen",
+		description:
+			"Ideen von fremden Websites, die noch nicht erledigt sind, neueste zuerst (ohne Fotos).",
+		inputSchema: obj({}),
+		call: () => ({ method: "GET", path: "ideen" }),
+	},
+	{
 		name: "websi_usage",
 		description:
 			"Kontingent: Läufe je Modell heute und Actions-Minuten im Monat.",

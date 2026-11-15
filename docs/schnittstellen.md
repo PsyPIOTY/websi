@@ -55,6 +55,11 @@ Alle Pfade unter `/api/websi/`, Antworten als JSON.
 | PUT | `usage/limits` | Richtwerte pro Tag `{ claude: 25, codex: 25, ollama: null }` |
 | GET | `sites/:id/online` | Knopf „Online stellen“: neueste Fassung, offener Auftrag, letzte Rückmeldung |
 | POST | `sites/:id/online` | Online stellen (nur Peter, nie über Token oder MCP), siehe unten |
+| GET | `ideen` | Ideen von fremden Websites, ohne erledigte, neueste zuerst |
+| POST | `ideen` | Neue Idee `{ text?, link?, bild?: "data:image/…;base64,…", quelle? }`; gleiche `quelle` kommt nur einmal an (`schonDa: true`) |
+| GET | `ideen/:id/bild` | Das Foto der Idee |
+| POST | `ideen/:id/uebernehmen` | Als gesammelten Wunsch „ganze Seite“ übernehmen `{ siteId }` |
+| POST | `ideen/:id/erledigt` | Idee weglegen |
 | POST | `mcp` | MCP-Brücke (JSON-RPC), siehe unten |
 
 Aktionen auf einen Wunsch eines Sammelauftrags antworten mit dem Wunsch und
@@ -95,7 +100,7 @@ durch; das Token schützt sie.
 Werkzeuge: `websi_sites`, `websi_site`, `websi_requests`, `websi_create_request`
 (sammelt standardmäßig), `websi_send_batch`, `websi_followup`, `websi_sync`,
 `websi_style`, `websi_add_style_rule`, `websi_scan`, `websi_hinweise`,
-`websi_pruefen`, `websi_usage`.
+`websi_pruefen`, `websi_idee_ablegen`, `websi_ideen`, `websi_usage`.
 Veröffentlichen und Verwerfen gibt es bewusst nicht: das bleibt Peters Klick.
 
 Beispiel für einen Claude-Client:
@@ -104,6 +109,14 @@ Beispiel für einen Claude-Client:
 { "mcpServers": { "websi": { "type": "http", "url": "https://<websi-adresse>/api/websi/mcp",
   "headers": { "Authorization": "Bearer <MCP_TOKEN>" } } } }
 ```
+
+## Ideen von fremden Websites
+
+Peter 14./15.11.2026: Foto oder Link einer fremden Seite mit dem Wort „Idee“ an den WEBSI-Bot in Telegram. Paco
+legt sie unter `AGENTEN/WEBSI/EINGANG/Ideen/` ab und gibt sie mit `websi_idee_ablegen` an WEBSI weiter (`quelle` =
+Dateiname bei Paco). Im Editor stehen sie in der Ecke „Ideen von fremden Seiten“: „Als Wunsch für …“ legt einen
+gesammelten Wunsch „ganze Seite“ für die aktive Website an (losgeschickt wird erst mit Peters Klick), „Erledigt“
+legt sie weg. Fremde Seiten nur als Anregung, kopiert wird nichts.
 
 ## Monatsprüfung (Hinweise)
 
