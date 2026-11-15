@@ -1,3 +1,4 @@
+import type { Idea, IdeaImage } from "../core/ideen";
 import type {
 	ChangeRequest,
 	DirectoryEntry,
@@ -6,8 +7,9 @@ import type {
 } from "../core/types";
 import schema1 from "../migrations/0001_init.sql?raw";
 import schema2 from "../migrations/0002_stil_kontingent.sql?raw";
+import schema3 from "../migrations/0003_ideen.sql?raw";
 
-const schema = `${schema1};${schema2}`;
+const schema = `${schema1};${schema2};${schema3}`;
 
 /** Speicher-Schnittstelle. D1 im Betrieb, Arbeitsspeicher in Tests. */
 export interface Store {
@@ -29,6 +31,13 @@ export interface Store {
 	deleteStyle(id: string): Promise<void>;
 	getSetting<T>(key: string): Promise<T | null>;
 	putSetting(key: string, value: unknown): Promise<void>;
+	/** Ideen von fremden Websites, neueste zuerst, ohne erledigte. */
+	listIdeas(): Promise<Idea[]>;
+	getIdea(id: string): Promise<Idea | null>;
+	findIdeaBySource(quelle: string): Promise<Idea | null>;
+	getIdeaImage(id: string): Promise<IdeaImage | null>;
+	/** bild nur beim Anlegen; beim Ändern bleibt das Foto, wie es ist. */
+	putIdea(idea: Idea, bild?: IdeaImage | null): Promise<void>;
 }
 
 interface StyleRow {
@@ -214,6 +223,62 @@ export class D1Store implements Store {
 			.bind(key, JSON.stringify(value))
 			.run();
 	}
+
+	async listIdeas() {
+		await this.init();
+		const { results } = await this.db
+			.prepare(
+				"SELECT data FROM ideen WHERE status != 'erledigt' ORDER BY created_at DESC LIMIT 200",
+			)
+			.all<{ data: string }>();
+		return results.map((r) => JSON.parse(r.data) as Idea);
+	}
+
+	async getIdea(id: string) {
+		await this.init();
+		const row = await this.db
+			.prepare("SELECT data FROM ideen WHERE id = ?")
+			.bind(id)
+			.first<{ data: string }>();
+		return row ? (JSON.parse(row.data) as Idea) : null;
+	}
+
+	async findIdeaBySource(quelle: string) {
+		await this.init();
+		const row = await this.db
+			.prepare("SELECT data FROM ideen WHERE quelle = ?")
+			.bind(quelle)
+			.first<{ data: string }>();
+		return row ? (JSON.parse(row.data) as Idea) : null;
+	}
+
+	async getIdeaImage(id: string) {
+		await this.init();
+		const row = await this.db
+			.prepare("SELECT data, bild FROM ideen WHERE id = ?")
+			.bind(id)
+			.first<{ data: string; bild: string | null }>();
+		const idea = row ? (JSON.parse(row.data) as Idea) : null;
+		return row?.bild && idea?.bild ? { type: idea.bild, data: row.bild } : null;
+	}
+
+	async putIdea(idea: Idea, bild?: IdeaImage | null) {
+		await this.init();
+		await this.db
+			.prepare(
+				`INSERT INTO ideen (id, status, quelle, data, bild, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+				 ON CONFLICT(id) DO UPDATE SET status = ?2, data = ?4`,
+			)
+			.bind(
+				idea.id,
+				idea.status,
+				idea.quelle ?? null,
+				JSON.stringify(idea),
+				bild?.data ?? null,
+				idea.createdAt,
+			)
+			.run();
+	}
 }
 
 export class MemoryStore implements Store {
@@ -222,6 +287,7 @@ export class MemoryStore implements Store {
 	directories = new Map<string, DirectoryEntry>();
 	style = new Map<string, StyleRule>();
 	settings = new Map<string, string>();
+	ideas = new Map<string, { idea: Idea; bild: IdeaImage | null }>();
 
 	async listRequests(siteId?: string) {
 		return [...this.requests.values()]
@@ -272,5 +338,29 @@ export class MemoryStore implements Store {
 	}
 	async putSetting(key: string, value: unknown) {
 		this.settings.set(key, JSON.stringify(value));
+	}
+	async listIdeas() {
+		return [...this.ideas.values()]
+			.map((x) => structuredClone(x.idea))
+			.filter((i) => i.status !== "erledigt")
+			.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+	}
+	async getIdea(id: string) {
+		const x = this.ideas.get(id);
+		return x ? structuredClone(x.idea) : null;
+	}
+	async findIdeaBySource(quelle: string) {
+		const x = [...this.ideas.values()].find((v) => v.idea.quelle === quelle);
+		return x ? structuredClone(x.idea) : null;
+	}
+	async getIdeaImage(id: string) {
+		return this.ideas.get(id)?.bild ?? null;
+	}
+	async putIdea(idea: Idea, bild?: IdeaImage | null) {
+		const old = this.ideas.get(idea.id);
+		this.ideas.set(idea.id, {
+			idea: structuredClone(idea),
+			bild: old ? old.bild : (bild ?? null),
+		});
 	}
 }
