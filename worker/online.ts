@@ -34,6 +34,29 @@ interface GhComment {
 }
 
 const BUILD = "Workers Builds";
+
+/**
+ * Kurze Störungen bei GitHub (z. B. Fehler 520, Peter 18.11.2026 we-12): bis zu
+ * drei Versuche mit Pause. Gilt für Lesen; beim Anlegen des Auftrags schaut
+ * WEBSI vor jedem neuen Versuch nach, ob der erste nicht doch angekommen ist.
+ */
+const VORUEBERGEHEND = new Set([500, 502, 503, 504, 520, 521, 522, 523, 524]);
+const PAUSEN_MS = [1_000, 3_000];
+
+class GitHubFehler extends Error {
+	constructor(
+		message: string,
+		readonly status: number,
+	) {
+		super(message);
+	}
+}
+
+/** Lohnt ein neuer Versuch? Netzfehler (kein status) und kurze Serverstörungen ja. */
+const voruebergehend = (e: unknown) =>
+	!(e instanceof GitHubFehler) || VORUEBERGEHEND.has(e.status);
+
+const warten = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 /** So viele frühere Aufträge je Seite liest WEBSI höchstens nach. */
 const LOOKBACK = 5;
 
@@ -41,8 +64,9 @@ export function createOnline(
 	env: OnlineEnv,
 	fetcher: FetchLike = (input, init) => fetch(input, init),
 	now: () => Date = () => new Date(),
+	pause: (ms: number) => Promise<void> = warten,
 ) {
-	async function gh<T>(path: string, init: RequestInit = {}): Promise<T> {
+	async function einmal<T>(path: string, init: RequestInit = {}): Promise<T> {
 		const res = await fetcher(`https://api.github.com${path}`, {
 			...init,
 			headers: {
@@ -55,11 +79,25 @@ export function createOnline(
 		});
 		if (!res.ok) {
 			const text = await res.text().catch(() => "");
-			throw new Error(
+			throw new GitHubFehler(
 				`GitHub ${res.status} bei ${path}: ${text.slice(0, 200)}`,
+				res.status,
 			);
 		}
 		return (await res.json()) as T;
+	}
+
+	/** Lesen mit bis zu drei Versuchen. Schreiben (POST) geht nur einmal, siehe start(). */
+	async function gh<T>(path: string, init: RequestInit = {}): Promise<T> {
+		if (init.method && init.method !== "GET") return einmal<T>(path, init);
+		for (let i = 0; ; i++) {
+			try {
+				return await einmal<T>(path, init);
+			} catch (e) {
+				if (i >= PAUSEN_MS.length || !voruebergehend(e)) throw e;
+				await pause(PAUSEN_MS[i]);
+			}
+		}
 	}
 
 	const repo = (s: SiteProfile) => `/repos/${s.repo.owner}/${s.repo.name}`;
@@ -195,19 +233,35 @@ export function createOnline(
 			zeit,
 			sig: await signOrder(env.MCP_TOKEN, s.id, before.stand.commit, zeit),
 		};
-		const issue = await gh<GhIssue>(`${repo(s)}/issues`, {
-			method: "POST",
-			body: JSON.stringify({
-				title: `Online stellen: ${s.online.domain}`,
-				body: orderBody(
-					order,
-					s.online.domain,
-					`${before.stand.commit.slice(0, 7)} · ${before.stand.message}`,
-				),
-				labels: [ONLINE_LABEL],
-			}),
-		});
-		return { ...before, pending: { at: zeit, url: issue.html_url } };
+		const anlegen = () =>
+			gh<GhIssue>(`${repo(s)}/issues`, {
+				method: "POST",
+				body: JSON.stringify({
+					title: `Online stellen: ${s.online?.domain}`,
+					body: orderBody(
+						order,
+						s.online?.domain ?? "",
+						`${before.stand?.commit.slice(0, 7)} · ${before.stand?.message}`,
+					),
+					labels: [ONLINE_LABEL],
+				}),
+			});
+		for (let i = 0; ; i++) {
+			try {
+				const issue = await anlegen();
+				return { ...before, pending: { at: zeit, url: issue.html_url } };
+			} catch (e) {
+				if (i >= PAUSEN_MS.length || !voruebergehend(e)) throw e;
+				await pause(PAUSEN_MS[i]);
+				// Kam der Auftrag trotz Fehlermeldung an? Dann keinen zweiten anlegen.
+				const open = (await orders(s)).find((x) => x.state === "open");
+				if (open)
+					return {
+						...before,
+						pending: { at: open.created_at, url: open.html_url },
+					};
+			}
+		}
 	}
 
 	return { status, start };
