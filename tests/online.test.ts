@@ -292,3 +292,92 @@ describe("Online stellen: API", () => {
 		}
 	});
 });
+
+describe("Online stellen: kurze Störungen bei GitHub (we-12)", () => {
+	const env = { GITHUB_TOKEN: "gh", MCP_TOKEN: "geheim" };
+	const keinePause = async () => {};
+	/** Die ersten `n` Anfragen an `teil` scheitern mit `status`, danach antwortet GitHub normal. */
+	function stoerung(
+		teil: string,
+		n: number,
+		status = 520,
+		methode = "GET",
+		issues: Record<string, unknown>[] = [],
+	) {
+		const gh = github(issues);
+		let fehler = 0;
+		const fetcher = async (url: string, init?: RequestInit) => {
+			if (
+				url.includes(teil) &&
+				(init?.method ?? "GET") === methode &&
+				fehler < n
+			) {
+				fehler++;
+				gh.calls.push({ method: init?.method ?? "GET", url });
+				return new Response("Web server is returning an unknown error", {
+					status,
+				});
+			}
+			return gh.fetcher(url, init);
+		};
+		return { fetcher, calls: gh.calls, gestoert: () => fehler };
+	}
+
+	it("liest nach einem Fehler 520 einfach noch einmal", async () => {
+		const { fetcher, gestoert } = stoerung("/commits/main", 2);
+		const st = await createOnline(env, fetcher, () => NOW, keinePause).status(
+			praxis,
+		);
+		expect(gestoert()).toBe(2);
+		expect(st.stand?.commit).toBe("abc1234def5678");
+	});
+
+	it("gibt nach drei Versuchen auf und nennt den Fehler", async () => {
+		const { fetcher } = stoerung("/commits/main", 5);
+		await expect(
+			createOnline(env, fetcher, () => NOW, keinePause).status(praxis),
+		).rejects.toThrow("GitHub 520");
+	});
+
+	it("versucht es bei einem echten Fehler (404) nicht noch einmal", async () => {
+		const { fetcher, calls } = stoerung("/commits/main", 1, 404);
+		await expect(
+			createOnline(env, fetcher, () => NOW, keinePause).status(praxis),
+		).rejects.toThrow("GitHub 404");
+		expect(calls.filter((c) => c.url.endsWith("/commits/main"))).toHaveLength(
+			1,
+		);
+	});
+
+	it("legt den Auftrag nach einem Fehler 520 beim zweiten Versuch an", async () => {
+		const { fetcher, calls } = stoerung("/issues", 1, 520, "POST");
+		const st = await createOnline(env, fetcher, () => NOW, keinePause).start(
+			praxis,
+		);
+		expect(calls.filter((c) => c.method === "POST")).toHaveLength(2);
+		expect(st.pending?.url).toBe("https://github.com/x/issues/99");
+	});
+
+	it("legt keinen zweiten Auftrag an, wenn der erste trotz Fehler angekommen ist", async () => {
+		const gh = github();
+		let gepostet = false;
+		const fetcher = async (url: string, init?: RequestInit) => {
+			if (init?.method === "POST") {
+				gh.calls.push({ method: "POST", url });
+				gepostet = true;
+				return new Response("Fehler", { status: 520 });
+			}
+			// Nach dem Fehler zeigt GitHub den Auftrag doch als offen.
+			if (gepostet && url.includes("/issues?labels=online-stellen"))
+				return new Response(JSON.stringify([order("praxis", 42, "open")]), {
+					status: 200,
+				});
+			return gh.fetcher(url, init);
+		};
+		const st = await createOnline(env, fetcher, () => NOW, keinePause).start(
+			praxis,
+		);
+		expect(gh.calls.filter((c) => c.method === "POST")).toHaveLength(1);
+		expect(st.pending?.url).toBe("https://github.com/x/issues/42");
+	});
+});
