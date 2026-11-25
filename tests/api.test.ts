@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ChangeRequest, VisibilityReport } from "../core/types";
 import { siteProfiles } from "../sites";
 import { createApi } from "../worker/api";
@@ -39,6 +39,53 @@ function setup() {
 }
 
 describe("API", () => {
+	afterEach(() => vi.unstubAllGlobals());
+
+	it("setzt einen auf GitHub gemergten Sammelauftrag beim Abgleich auf Live (Peter 25.11.)", async () => {
+		const { store, call } = setup();
+		const base = {
+			siteId: "praxis",
+			text: "x",
+			pagePath: "/praxis",
+			status: "vorschlag" as const,
+			createdAt: "t",
+			updatedAt: "t",
+			events: [],
+			batchId: "b8",
+			external: {
+				adapter: "github-claude",
+				id: "8",
+				url: "",
+				drafts: [{ name: "a", branch: "websi/issue-8-a", proposalUrl: "u" }],
+				chosen: "websi/issue-8-a",
+			},
+		};
+		await store.putRequest({ ...base, id: "a1", sectionId: "about" });
+		await store.putRequest({ ...base, id: "a2", sectionId: "offers" });
+		vi.stubGlobal("fetch", async (url: string) => {
+			const path = new URL(url).pathname;
+			if (path.endsWith("/issues/8/comments")) return Response.json([]);
+			if (path.endsWith("/pulls"))
+				return Response.json([
+					{
+						number: 11,
+						html_url: "https://github.com/x/pull/11",
+						state: "closed",
+						merged_at: "2026-11-16T19:31:07Z",
+						body: null,
+						head: { ref: "websi/issue-8-praxis" },
+					},
+				]);
+			return new Response("nicht gefunden", { status: 404 });
+		});
+		const res = await call("POST", "requests/a1/sync");
+		expect(res.data.status).toBe("veroeffentlicht");
+		expect(res.data.external?.drafts).toBeUndefined();
+		const related = res.data.related as ChangeRequest[];
+		expect(related.map((r) => r.status)).toEqual(["veroeffentlicht"]);
+		expect(res.data.events.at(-1)?.url).toBe("https://github.com/x/pull/11");
+	});
+
 	it("führt einen Auftrag vom Wunsch bis zur Veröffentlichung", async () => {
 		const { call } = setup();
 		const created = await call("POST", "requests", {

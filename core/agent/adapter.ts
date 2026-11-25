@@ -9,7 +9,11 @@ import type {
 
 /** Was ein Ausführer über einen Auftrag zurückmeldet. */
 export interface AgentUpdate {
-	status: "in_arbeit" | "vorschlag" | "unveraendert";
+	/**
+	 * „live“: Vorschlag wurde auf GitHub übernommen oder der Auftrag als erledigt
+	 * geschlossen (auch ohne WEBSI-Knopf). „verworfen“: als nicht geplant geschlossen.
+	 */
+	status: "in_arbeit" | "vorschlag" | "unveraendert" | "live" | "verworfen";
 	/** Neue Antworten des Agenten seit dem letzten Abgleich. */
 	messages: { at: string; text: string; url?: string; usage?: RunUsage }[];
 	proposalUrl?: string;

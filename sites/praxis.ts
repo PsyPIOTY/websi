@@ -23,7 +23,6 @@ export const praxis: SiteProfile = {
 		{ id: "hero", label: "Einleitung", selector: `${anchor("hero")}, ${anchor("hero.approved")}` },
 		{ id: "concerns", label: "Anliegen", selector: anchor("concerns") },
 		{ id: "experience", label: "Selbsteinschätzung", selector: anchor("experience") },
-		{ id: "offers", label: "Angebot", selector: anchor("offers") },
 		{ id: "approach", label: "Haltung", selector: anchor("approach") },
 		{ id: "about", label: "Person", selector: anchor("about") },
 		{ id: "rahmen", label: "Rahmen", selector: anchor("rahmen") },

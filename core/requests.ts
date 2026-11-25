@@ -4,7 +4,7 @@ import type { ChangeRequest, Pin, RequestEvent, RequestStatus } from "./types";
 /** Erlaubte Übergänge. Veröffentlichen kann nur Peter auslösen (Worker prüft das). */
 const transitions: Record<RequestStatus, RequestStatus[]> = {
 	offen: ["in_arbeit", "verworfen"],
-	in_arbeit: ["vorschlag", "offen", "verworfen"],
+	in_arbeit: ["vorschlag", "veroeffentlicht", "offen", "verworfen"],
 	vorschlag: ["in_arbeit", "veroeffentlicht", "verworfen"],
 	veroeffentlicht: [],
 	verworfen: ["offen"],

@@ -30,6 +30,12 @@ interface GhPull {
 	head: { ref: string; sha?: string };
 }
 
+interface GhIssue {
+	html_url: string;
+	state: string;
+	state_reason: string | null;
+}
+
 interface GhCheckRuns {
 	check_runs: {
 		details_url: string | null;
@@ -138,6 +144,10 @@ export class GitHubClaudeAdapter implements AgentAdapter {
 			.map((c) => workerMeta(c.body)?.preview)
 			.filter(Boolean)
 			.at(-1);
+
+		// Schon erledigt? Etwa direkt auf GitHub übernommen statt über WEBSI (Peter 25.11.).
+		const done = await this.finished(repo, n);
+		if (done) return { status: done.status, messages, proposalUrl: done.url };
 
 		// Mehrere Entwürfe: bis Peter wählt, zählen nur diese.
 		const draftMeta = agentComments
@@ -249,6 +259,30 @@ export class GitHubClaudeAdapter implements AgentAdapter {
 			pulls.find((p) => isProposalBranch(p.head.ref, n)) ??
 			pulls.find((p) => p.body !== null && ref.test(p.body))
 		);
+	}
+
+	/**
+	 * Abschluss außerhalb von WEBSI erkennen: ein übernommener Vorschlags-Branch
+	 * (auch einer von mehreren Entwürfen) oder das geschlossene Issue.
+	 * Fehler beim Nachsehen gelten als „noch nicht erledigt“.
+	 */
+	private async finished(
+		repo: string,
+		n: string,
+	): Promise<{ status: "live" | "verworfen"; url?: string } | null> {
+		const pulls = await this.pulls(repo).catch(() => [] as GhPull[]);
+		const merged = pulls.find(
+			(p) => p.merged_at && isProposalBranch(p.head.ref, n),
+		);
+		if (merged) return { status: "live", url: merged.html_url };
+		const issue = await this.gh<GhIssue>(`${repo}/issues/${n}`).catch(
+			() => null,
+		);
+		if (issue?.state !== "closed") return null;
+		return {
+			status: issue.state_reason === "not_planned" ? "verworfen" : "live",
+			url: issue.html_url,
+		};
 	}
 
 	private async findBranch(repo: string, n: string) {

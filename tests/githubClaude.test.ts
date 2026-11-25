@@ -443,3 +443,97 @@ describe("Mehrere Entwürfe über GitHub", () => {
 		);
 	});
 });
+
+describe("Abgleich: außerhalb von WEBSI erledigt (Peter 25.11.)", () => {
+	const base = () => ({
+		...createRequest(
+			{
+				siteId: "humansource",
+				sectionId: "situation",
+				text: "x",
+				pagePath: "/",
+			},
+			"r1",
+			"t",
+		),
+		status: "vorschlag" as const,
+		external: { adapter: "github-claude", id: "18", url: "" },
+	});
+
+	it("meldet live, wenn ein Entwurfs-Branch direkt auf GitHub gemergt wurde", async () => {
+		const gh = fakeGitHub({
+			[`GET ${repo}/issues/18/comments`]: [
+				{
+					html_url: "c1",
+					created_at: "t1",
+					body: '<!-- websi-worker {"engine":"claude","seconds":5,"where":"github","drafts":[{"name":"mutig","branch":"websi/issue-18-entwurf-mutig","url":"u"}]} -->\nEntwürfe',
+					user: { login: "PsyPIOTY", type: "User" },
+				},
+			],
+			[`GET ${repo}/pulls`]: [
+				{
+					number: 22,
+					html_url: "https://github.com/x/pull/22",
+					state: "closed",
+					merged_at: "2026-11-16T19:33:03Z",
+					body: null,
+					head: { ref: "websi/issue-18-entwurf-mutig" },
+				},
+			],
+		});
+		const update = await new GitHubClaudeAdapter("t", gh.fetcher).sync(
+			base(),
+			ctx,
+		);
+		expect(update.status).toBe("live");
+		expect(update.proposalUrl).toBe("https://github.com/x/pull/22");
+	});
+
+	it("meldet live bei als erledigt geschlossenem Issue, verworfen bei „nicht geplant“", async () => {
+		for (const [reason, expected] of [
+			["completed", "live"],
+			["not_planned", "verworfen"],
+		] as const) {
+			const gh = fakeGitHub({
+				[`GET ${repo}/issues/18/comments`]: [],
+				[`GET ${repo}/pulls`]: [],
+				[`GET ${repo}/issues/18`]: {
+					html_url: "https://github.com/x/issues/18",
+					state: "closed",
+					state_reason: reason,
+				},
+			});
+			const update = await new GitHubClaudeAdapter("t", gh.fetcher).sync(
+				base(),
+				ctx,
+			);
+			expect(update.status).toBe(expected);
+		}
+	});
+
+	it("ein offener Pull Request zählt weiter als Vorschlag", async () => {
+		const gh = fakeGitHub({
+			[`GET ${repo}/issues/18/comments`]: [],
+			[`GET ${repo}/pulls`]: [
+				{
+					number: 30,
+					html_url: "https://github.com/x/pull/30",
+					state: "open",
+					merged_at: null,
+					body: null,
+					head: { ref: "websi/issue-18-faq" },
+				},
+			],
+			[`GET ${repo}/issues/18`]: {
+				html_url: "i",
+				state: "open",
+				state_reason: null,
+			},
+		});
+		const update = await new GitHubClaudeAdapter("t", gh.fetcher).sync(
+			base(),
+			ctx,
+		);
+		expect(update.status).toBe("vorschlag");
+	});
+});
