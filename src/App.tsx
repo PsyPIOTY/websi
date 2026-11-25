@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_ENGINE, type EngineId, isEngine } from "../core/engines";
 import type { ChangeRequest } from "../core/types";
 import type { UsageSummary } from "../core/usage";
@@ -136,6 +136,23 @@ export function App() {
 	useEffect(() => {
 		if (changeKey) refreshUsage();
 	}, [changeKey, refreshUsage]);
+
+	// Beim Öffnen einmal alle offenen Vorschläge abgleichen: Was inzwischen auf
+	// GitHub übernommen oder geschlossen wurde, springt auf „Live“ (Peter 25.11.).
+	const checkedOnce = useRef(new Set<string>());
+	useEffect(() => {
+		if (!data) return;
+		for (const r of data.requests) {
+			if (r.status !== "vorschlag" || !r.external) continue;
+			const key = r.batchId ?? r.id;
+			if (checkedOnce.current.has(key)) continue;
+			checkedOnce.current.add(key);
+			api.action(r.id, "sync").then(
+				(res) => upsertMany([res, ...(res.related ?? [])]),
+				() => {},
+			);
+		}
+	}, [data, upsertMany]);
 
 	// Laufende Aufträge regelmäßig abgleichen; ein Sammelauftrag nur einmal.
 	useEffect(() => {

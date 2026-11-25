@@ -265,6 +265,23 @@ export function createApi(deps: ApiDeps) {
 				usage: m.usage,
 			});
 		}
+		if (update.status === "live" || update.status === "verworfen") {
+			const to = update.status === "live" ? "veroeffentlicht" : "verworfen";
+			return withStatus(
+				{ ...next, external: { ...r.external, drafts: undefined } },
+				to,
+				now(),
+				{
+					kind: "status",
+					text:
+						to === "veroeffentlicht"
+							? "Auf GitHub übernommen, jetzt Live"
+							: "Auf GitHub geschlossen, verworfen",
+					by: r.external.adapter,
+					url: update.proposalUrl,
+				},
+			);
+		}
 		if (update.status === "vorschlag" && next.status === "in_arbeit") {
 			next = withStatus(next, "vorschlag", now(), {
 				kind: "vorschlag",
